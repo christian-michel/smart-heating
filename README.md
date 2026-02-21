@@ -18,23 +18,41 @@ Le projet se concentre sur :
 ## 2️⃣ Arborescence du projet
 
 projet/
+
 │
+
 ├─ core/ # Modules principaux du projet
+
 │ ├─ thermostat.py # Orchestration : température + chauffage + switch + CSVLogger
+
 │ ├─ heating.py # Gestion du chauffage (LED pour tests)
+
 │ ├─ switch.py # Gestion du bouton poussoir
+
 │ ├─ temperature.py # Lecture de la sonde DS18B20
+
 │ └─ csv_logger.py # Gestion du CSV et rotation journalière
+
 │
+
 ├─ services/
+
 │ └─ logger_service.py # Logger général pour debug et suivi
+
 │
+
 ├─ config.py # Fichier de configuration principal
+
 │ # Paramètres comme :
+
 │ # GPIO, seuil de température, tolérance, intervalle de log
+
 │ # Chemin USB, etc.
+
 │
+
 ├─ README.md # Ce fichier
+
 └─ requirements.txt # Dépendances Python (ex : RPi.GPIO)
 
 
