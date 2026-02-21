@@ -1,0 +1,2 @@
+# smart-heating
+thermostat-iot
