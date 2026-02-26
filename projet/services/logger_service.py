@@ -1,63 +1,52 @@
 """
 logger_service.py
 
-Responsabilité :
-Enregistrer les données du thermostat dans un fichier CSV.
-
-Test autonome :
-python3 -m services.logger_service
+Gestion de l'enregistrement des données du thermostat
+avec vérification dynamique du stockage.
 """
 
 import os
 import csv
 from datetime import datetime
-from config import LOG_DIRECTORY
+
+from services.storage_manager import StorageManager
 
 
 class LoggerService:
-    """
-    Service de journalisation des données.
-    """
 
     def __init__(self):
-        os.makedirs(LOG_DIRECTORY, exist_ok=True)
+        self.storage_manager = StorageManager()
+        self.session_filename = self._generate_session_filename()
 
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        self.file_path = os.path.join(LOG_DIRECTORY, f"log_{date_str}.csv")
+    def log(self, temperature: float, heating_state: bool, switch_state: bool):
 
-        if not os.path.exists(self.file_path):
-            with open(self.file_path, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(["timestamp", "temperature", "heating", "switch"])
+        # 🔁 Vérifie stockage à chaque log
+        self.storage_manager.refresh()
+        storage = self.storage_manager.get_active_storage()
+        base_path = storage.get_path()
 
-    def log(self, temperature, heating_state, switch_state):
-        """
-        Écrit une ligne dans le fichier CSV.
-        """
+        file_path = os.path.join(base_path, self.session_filename)
+        file_exists = os.path.exists(file_path)
+
         try:
-            with open(self.file_path, "a", newline="") as f:
-                writer = csv.writer(f)
+            with open(file_path, mode="a", newline="") as file:
+                writer = csv.writer(file)
+
+                if not file_exists:
+                    writer.writerow(["timestamp", "temperature", "heating", "switch"])
+
                 writer.writerow([
-                    datetime.now().isoformat(),
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     temperature,
                     heating_state,
                     switch_state
                 ])
+
+            print(f"Données enregistrées dans : {file_path}")
+
         except Exception as e:
-            print(f"Erreur écriture log : {e}")
+            print(f"Erreur LoggerService : {e}")
 
-
-# ==========================
-# === TEST AUTONOME
-# ==========================
-
-if __name__ == "__main__":
-    print("Test logger...")
-
-    logger = LoggerService()
-
-    logger.log(21.5, True, True)
-    logger.log(22.1, False, True)
-    logger.log(23.0, False, False)
-
-    print("3 lignes écrites.")
+    def _generate_session_filename(self):
+        timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        return f"temperature_{timestamp_str}.csv"

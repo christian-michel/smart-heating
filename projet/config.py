@@ -1,7 +1,7 @@
 """
 config.py
 
-Configuration centrale du projet domotique.
+Configuration centrale du projet Smart Heating.
 Adapté au Raspberry Pi 3.
 """
 
@@ -31,15 +31,21 @@ SWITCH_GPIO = 27
 # === TEMPERATURE
 # ==========================
 
-TEMPERATURE_TARGET = 50.0
+TEMPERATURE_TARGET = 22.0
 TEMPERATURE_TOLERANCE = 0.5
 
 # ==========================
 # === STOCKAGE
 # ==========================
 
+# Point de montage USB
 USB_MOUNT_PATH = "/mnt/usb_backup"
-LOG_DIRECTORY = "logs"
+
+# Systèmes de fichiers supportés
+SUPPORTED_USB_FILESYSTEMS = ["vfat", "ntfs"]
+
+# Dossier fallback local
+LOCAL_STORAGE_PATH = "logs"
 
 # ==========================
 # === APPLICATION
@@ -47,3 +53,11 @@ LOG_DIRECTORY = "logs"
 
 DEBUG_MODE = True
 LOG_INTERVAL_SECONDS = 10
+
+# ==========================
+# === CSV
+# ==========================
+
+CSV_FILENAME_PREFIX = "temperature"
+CSV_DATE_FORMAT = "%Y-%m-%d"
+CSV_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
