@@ -2,10 +2,11 @@
 local_storage.py
 
 Stockage local de secours (fallback).
-Toujours disponible.
+Synchronisation vers USB quand disponible.
 """
 
 import os
+import shutil
 from services.storage.base_storage import BaseStorage
 
 
@@ -36,6 +37,30 @@ class LocalStorage(BaseStorage):
 
     def sync(self, other_storage: BaseStorage):
         """
-        Synchronisation future (non implémentée pour l'instant).
+        Copie les fichiers CSV locaux vers l'autre stockage (USB).
+        Basée uniquement sur le nom de fichier pour éviter d'écraser.
         """
-        pass
+
+        source_dir = self.base_path
+        target_dir = other_storage.get_path()
+
+        # Vérifie que le stockage cible existe
+        if not os.path.exists(target_dir):
+            return
+
+        for filename in os.listdir(source_dir):
+
+            # On ne copie que les fichiers CSV
+            if not filename.endswith(".csv"):
+                continue
+
+            source_file = os.path.join(source_dir, filename)
+            target_file = os.path.join(target_dir, filename)
+
+            # Si le fichier n'existe pas encore sur USB → on copie
+            if not os.path.exists(target_file):
+                try:
+                    shutil.copy2(source_file, target_file)
+                    print(f"Sync : {filename} copié vers USB")
+                except Exception as e:
+                    print(f"Erreur sync {filename} : {e}")
