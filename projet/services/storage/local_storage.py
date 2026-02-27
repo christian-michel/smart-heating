@@ -3,6 +3,7 @@ local_storage.py
 
 Stockage local de secours (fallback).
 Synchronisation vers USB quand disponible.
+Tous les fichiers CSV présents sur l'USB sont supprimés du stockage local.
 """
 
 import os
@@ -37,30 +38,46 @@ class LocalStorage(BaseStorage):
 
     def sync(self, other_storage: BaseStorage):
         """
-        Copie les fichiers CSV locaux vers l'autre stockage (USB).
-        Basée uniquement sur le nom de fichier pour éviter d'écraser.
+        Synchronise TOUS les fichiers CSV locaux vers l'autre stockage (USB)
+        et supprime les fichiers locaux dès qu'ils existent sur l'USB.
         """
 
         source_dir = self.base_path
         target_dir = other_storage.get_path()
 
-        # Vérifie que le stockage cible existe
         if not os.path.exists(target_dir):
             return
 
+        synced_count = 0
+        deleted_count = 0
+
         for filename in os.listdir(source_dir):
 
-            # On ne copie que les fichiers CSV
             if not filename.endswith(".csv"):
                 continue
 
             source_file = os.path.join(source_dir, filename)
             target_file = os.path.join(target_dir, filename)
 
-            # Si le fichier n'existe pas encore sur USB → on copie
-            if not os.path.exists(target_file):
-                try:
+            try:
+                # 1 Copier vers USB si nécessaire
+                if not os.path.exists(target_file):
                     shutil.copy2(source_file, target_file)
                     print(f"Sync : {filename} copié vers USB")
-                except Exception as e:
-                    print(f"Erreur sync {filename} : {e}")
+                    synced_count += 1
+
+                # 2 Supprimer localement dès que le fichier existe sur USB
+                if os.path.exists(target_file):
+                    os.remove(source_file)
+                    print(f"Local : {filename} supprimé")
+                    deleted_count += 1
+
+            except Exception as e:
+                print(f"Erreur sync {filename} : {e}")
+
+        if synced_count or deleted_count:
+            print(
+                f"Synchronisation terminée : "
+                f"{synced_count} fichier(s) copiés, "
+                f"{deleted_count} fichier(s) supprimés localement."
+            )
