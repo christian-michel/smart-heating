@@ -19,8 +19,11 @@ class LoggerService:
         self.session_filename = self._generate_session_filename()
 
     def log(self, temperature: float, heating_state: bool, switch_state: bool):
+        """
+        Enregistre une ligne de données et déclenche les synchronisations.
+        """
 
-        # 🔁 Vérifie stockage à chaque log
+        # 1 Vérifie le stockage actif
         self.storage_manager.refresh()
         storage = self.storage_manager.get_active_storage()
         base_path = storage.get_path()
@@ -29,6 +32,7 @@ class LoggerService:
         file_exists = os.path.exists(file_path)
 
         try:
+            # 2 Écriture du CSV
             with open(file_path, mode="a", newline="") as file:
                 writer = csv.writer(file)
 
@@ -46,6 +50,10 @@ class LoggerService:
 
         except Exception as e:
             print(f"Erreur LoggerService : {e}")
+            return
+
+        # 3 Synchronisation APRÈS écriture
+        self.storage_manager.refresh()
 
     def _generate_session_filename(self):
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
