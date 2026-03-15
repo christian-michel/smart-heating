@@ -9,8 +9,10 @@ Sélectionne automatiquement le stockage actif :
 Synchronisations :
 - local -> USB
 - local -> Dropbox
-- USB -> Dropbox (opportuniste)
+- USB -> Dropbox (opportuniste, limité par intervalle)
 """
+
+import time
 
 from backend.services.storage.usb_storage import USBStorage
 from backend.services.storage.local_storage import LocalStorage
@@ -28,6 +30,10 @@ class StorageManager:
         # Flags uniquement pour éviter double sync local
         self.local_synced_to_usb = False
         self.local_synced_to_dropbox = False
+
+        # === Limitation de fréquence de sync Dropbox ===
+        self.last_dropbox_sync = 0
+        self.dropbox_sync_interval = 60 # secondes
 
         self.refresh(initial=True)
 
@@ -55,8 +61,6 @@ class StorageManager:
             else:
                 print("USB et Dropbox non disponibles. Utilisation du stockage local.")
 
-            # IMPORTANT : on ne return plus ici
-
         # === Local -> USB ===
         if isinstance(preferred_storage, USBStorage) and not self.local_synced_to_usb:
             print("USB disponible. Synchronisation des données locales vers USB...")
@@ -72,10 +76,17 @@ class StorageManager:
             self.local_storage.sync(self.dropbox_storage)
             self.local_synced_to_dropbox = True
 
-        # === USB -> Dropbox (toujours tenté si dispo) ===
-        if self.usb_storage.is_available() and self.dropbox_storage.is_available():
+        # === USB -> Dropbox (sync limitée dans le temps) ===
+        current_time = time.time()
+
+        if (
+            self.usb_storage.is_available()
+            and self.dropbox_storage.is_available()
+            and current_time - self.last_dropbox_sync >= self.dropbox_sync_interval
+        ):
             print("Synchronisation des données USB vers Dropbox...")
             self.dropbox_storage.sync(self.usb_storage)
+            self.last_dropbox_sync = current_time
 
         # === Changement réel de stockage actif ===
         if type(preferred_storage) != type(self.active_storage):

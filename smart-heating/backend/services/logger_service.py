@@ -43,8 +43,7 @@ class LoggerService:
         """
 
         try:
-            # 1 Vérifie le stockage actif
-            self.storage_manager.refresh()
+            # 1 Récupération du stockage actif
             storage = self.storage_manager.get_active_storage()
             base_path = storage.get_path()
 
@@ -68,8 +67,11 @@ class LoggerService:
 
             # 4 Flush si buffer plein ou intervalle dépassé
             if len(self.buffer) >= self.buffer_limit or time_since_last_flush >= self.flush_interval:
+
                 self._flush_to_disk(base_path)
-                self.last_flush_time = current_time # mise à jour du timestamp après flush
+
+                # Mise à jour du timestamp après flush
+                self.last_flush_time = current_time
 
                 # Synchronisation après écriture
                 self.storage_manager.refresh()

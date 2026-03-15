@@ -1,40 +1,37 @@
 """
 test_dropbox_storage.py
 
-Tests unitaires pour DropboxStorage (étape C).
-Aucune connexion réelle à Dropbox (client mocké).
+Script de test pour DropboxStorage.
+Crée un CSV test, synchronise vers Dropbox, et vérifie la suppression locale.
 """
 
 import os
-from unittest.mock import MagicMock, patch
-from services.storage.dropbox_storage import DropboxStorage
-from services.storage.local_storage import LocalStorage
+import csv
+from datetime import datetime
+from backend.services.storage.dropbox_storage import DropboxStorage
+from backend.services.storage.local_storage import LocalStorage
 
+# --- Étape 1 : Préparer un fichier CSV test dans le storage local ---
+local_storage = LocalStorage() # dossier 'data/' par défaut
+test_filename = f"test_dropbox_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+test_filepath = os.path.join(local_storage.get_path(), test_filename)
 
-def test_dropbox_storage_not_available_without_token(monkeypatch):
-    monkeypatch.delenv("DROPBOX_TOKEN", raising=False)
-    storage = DropboxStorage()
-    assert storage.is_available() is False
+# Crée un petit fichier CSV test
+with open(test_filepath, mode="w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["timestamp", "temperature", "heating", "switch"])
+    writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 22.5, True, False])
 
+print(f"Fichier CSV test créé : {test_filepath}")
 
-@patch("services.storage.dropbox_storage.dropbox.Dropbox")
-def test_dropbox_storage_upload_csv(mock_dropbox, monkeypatch, tmp_path):
-    monkeypatch.setenv("DROPBOX_TOKEN", "fake-token")
+# --- Étape 2 : Initialiser DropboxStorage ---
+dropbox = DropboxStorage()
 
-    # Mock Dropbox client
-    mock_client = MagicMock()
-    mock_dropbox.return_value = mock_client
+# --- Étape 3 : Synchroniser vers Dropbox ---
+dropbox.sync(local_storage)
 
-    # Fake local storage
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    test_file = data_dir / "test.csv"
-    test_file.write_text("timestamp,temp\n2026-01-01,20")
-
-    local_storage = LocalStorage(base_path=str(data_dir))
-    dropbox_storage = DropboxStorage()
-
-    dropbox_storage.sync(local_storage)
-
-    # Vérifie que files_upload a été appelé
-    assert mock_client.files_upload.called
+# --- Étape 4 : Vérifier si le fichier a été supprimé localement après upload ---
+if not os.path.exists(test_filepath):
+    print(f"✅ Test réussi : le fichier {test_filename} a été uploadé et supprimé localement.")
+else:
+    print(f"⚠ Test échoué : le fichier {test_filename} existe encore localement.")

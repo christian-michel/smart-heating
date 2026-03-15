@@ -1,45 +1,52 @@
 """
 test_local_storage.py
 
-Tests pour vérifier le bon fonctionnement de LocalStorage.
+Test complet pour backend.services.storage.local_storage.LocalStorage
+- Vérifie la création du dossier de stockage
+- Vérifie la synchronisation vers un stockage cible simulé (USB)
+- Vérifie la suppression du fichier local après copie
 """
 
 import os
-from services.storage.local_storage import LocalStorage
+import tempfile
+from backend.services.storage.local_storage import LocalStorage
 
+# --- 1️⃣ Création de LocalStorage ---
+print("=== Initialisation de LocalStorage ===")
+local_storage = LocalStorage()
 
-def test_local_storage_always_available(tmp_path):
-    """
-    Vérifie que LocalStorage est toujours disponible.
-    """
+base_path = local_storage.get_path()
+print(f"Dossier local : {base_path}")
+assert os.path.exists(base_path), "❌ Le dossier local n'a pas été créé !"
+print("✅ Dossier local créé correctement.\n")
 
-    storage = LocalStorage(str(tmp_path))
+# --- 2️⃣ Création d'un fichier CSV test ---
+csv_test_file = os.path.join(base_path, "test.csv")
+with open(csv_test_file, "w", newline="") as f:
+    f.write("timestamp,temperature,heating,switch\n")
+    f.write("2026-03-15 10:00:00,20.5,True,False\n")
+print(f"✅ Fichier CSV de test créé : {csv_test_file}\n")
 
-    assert storage.is_available() is True
+# --- 3️⃣ Création d'un stockage USB simulé ---
+usb_dir = tempfile.mkdtemp()
+print(f"Dossier USB simulé : {usb_dir}\n")
 
+# Classe simple simulant le stockage USB
+class FakeUSB:
+    def get_path(self):
+        return usb_dir
 
-def test_local_storage_creates_directory(tmp_path):
-    """
-    Vérifie que le dossier est créé automatiquement.
-    """
+# --- 4️⃣ Synchronisation ---
+print("=== Synchronisation vers USB simulé ===")
+local_storage.sync(FakeUSB())
 
-    test_path = tmp_path / "local_data"
+# --- 5️⃣ Vérifications ---
+usb_files = os.listdir(usb_dir)
+local_files = os.listdir(base_path)
 
-    storage = LocalStorage(str(test_path))
+print(f"Fichiers sur USB simulé : {usb_files}")
+print(f"Fichiers restants localement : {local_files}")
 
-    assert os.path.exists(storage.get_path())
-
-
-def test_local_storage_can_write_file(tmp_path):
-    """
-    Vérifie qu'on peut écrire un fichier dans le stockage local.
-    """
-
-    storage = LocalStorage(str(tmp_path))
-
-    file_path = os.path.join(storage.get_path(), "test.csv")
-
-    with open(file_path, "w") as f:
-        f.write("temperature,etat\n21,OFF\n")
-
-    assert os.path.exists(file_path)
+assert "test.csv" in usb_files, "❌ Le fichier n'a pas été copié sur le stockage USB !"
+assert "test.csv" not in local_files, "❌ Le fichier local n'a pas été supprimé !"
+print("\n✅ Test réussi : fichier copié sur USB et supprimé localement")

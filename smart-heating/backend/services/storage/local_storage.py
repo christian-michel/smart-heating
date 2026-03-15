@@ -4,6 +4,9 @@ local_storage.py
 Stockage local de secours (fallback).
 Synchronisation vers USB quand disponible.
 Tous les fichiers CSV présents sur l'USB sont supprimés du stockage local.
+
+Modification : chemin absolu basé sur le dossier backend pour éviter la création
+de dossiers à la racine du projet.
 """
 
 import os
@@ -13,11 +16,20 @@ from backend.services.storage.base_storage import BaseStorage
 
 class LocalStorage(BaseStorage):
 
-    def __init__(self, base_path="data"):
+    def __init__(self, base_path=None):
         """
         base_path : dossier local où stocker les fichiers
+        Par défaut : backend/data
         """
-        self.base_path = base_path
+        if base_path is None:
+            # Chemin absolu vers backend/data
+            self.base_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "data"
+            )
+        else:
+            self.base_path = base_path
+
         self._ensure_directory()
 
     def _ensure_directory(self):
@@ -25,7 +37,7 @@ class LocalStorage(BaseStorage):
         Crée le dossier s'il n'existe pas.
         """
         if not os.path.exists(self.base_path):
-            os.makedirs(self.base_path)
+            os.makedirs(self.base_path, exist_ok=True)
 
     def is_available(self) -> bool:
         """
@@ -46,6 +58,7 @@ class LocalStorage(BaseStorage):
         target_dir = other_storage.get_path()
 
         if not os.path.exists(target_dir):
+            print(f"Stockage cible indisponible : {target_dir}")
             return
 
         synced_count = 0
@@ -63,7 +76,7 @@ class LocalStorage(BaseStorage):
                 # 1 Copier vers USB si nécessaire
                 if not os.path.exists(target_file):
                     shutil.copy2(source_file, target_file)
-                    print(f"Sync : {filename} copié vers USB")
+                    print(f"Sync : {filename} copié vers {target_dir}")
                     synced_count += 1
 
                 # 2 Supprimer localement dès que le fichier existe sur USB
