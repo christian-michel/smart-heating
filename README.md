@@ -240,7 +240,7 @@ sudo mkdir -p /media/maison/SAUVEGARDE
 #### 2. Ajouter dans /etc/fstab (avec label ou UUID) :
 
 ```bash
-LABEL=SAUVEGARDE  /media/maison/SAUVEGARDE  vfat  defaults,nofail  0  0
+LABEL=SAUVEGARDE  /media/maison/SAUVEGARDE  ext4  defaults,nofail  0  2
 ```
 
 #### 3. Monter toutes les partitions :
