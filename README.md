@@ -17,44 +17,159 @@ Le projet se concentre sur :
 
 ## 2️⃣ Arborescence du projet
 
-projet/
+smart-heating/
 
-│
+├── backend
 
-├─ core/ # Modules principaux du projet
+│   ├── config.py
 
-│ ├─ thermostat.py # Orchestration : température + chauffage + switch + CSVLogger
+│   ├── core
 
-│ ├─ heating.py # Gestion du chauffage (LED pour tests)
+│   │   ├── heating.py
 
-│ ├─ switch.py # Gestion du bouton poussoir
+│   │   ├── __init__.py
 
-│ ├─ temperature.py # Lecture de la sonde DS18B20
+│   │   ├── __pycache__
 
-│ └─ csv_logger.py # Gestion du CSV et rotation journalière
+│   │   │   ├── heating.cpython-313.pyc
 
-│
+│   │   │   ├── __init__.cpython-313.pyc
 
-├─ services/
+│   │   │   ├── switch.cpython-313.pyc
 
-│ └─ logger_service.py # Logger général pour debug et suivi
+│   │   │   ├── temperature.cpython-313.pyc
 
-│
+│   │   │   └── thermostat.cpython-313.pyc
 
-├─ config.py # Fichier de configuration principal
+│   │   ├── switch.py
 
-│ # Paramètres comme :
+│   │   ├── temperature.py
 
-│ # GPIO, seuil de température, tolérance, intervalle de log
+│   │   └── thermostat.py
 
-│ # Chemin USB, etc.
+│   ├── data
 
-│
+│   │   ├── temperature_2026-03-11_23-31-56.csv
 
-├─ README.md # Ce fichier
+│   │   ├── temperature_2026-03-11_23-34-23.csv
 
-└─ requirements.txt # Dépendances Python (ex : RPi.GPIO)
+│   │   ├── temperature_2026-03-11_23-54-23.csv
 
+│   │   ├── temperature_2026-03-12_00-04-00.csv
+
+│   │   ├── temperature_2026-03-12_06-06-44.csv
+
+│   │   └── temperature_2026-03-12_13-05-56.csv
+
+│   ├── __init__.py
+
+│   ├── logs
+
+│   │   ├── log_2026-02-20.csv
+
+│   │   └── log_2026-02-21.csv
+
+│   ├── __pycache__
+
+│   │   ├── config.cpython-313.pyc
+
+│   │   └── __init__.cpython-313.pyc
+
+│   ├── pyproject.toml
+
+│   ├── services
+
+│   │   ├── __init__.py
+
+│   │   ├── logger_service.py
+
+│   │   ├── __pycache__
+
+│   │   │   ├── __init__.cpython-313.pyc
+
+│   │   │   ├── logger_service.cpython-313.pyc
+
+│   │   │   └── storage_manager.cpython-313.pyc
+
+│   │   ├── storage
+
+│   │   │   ├── base_storage.py
+
+│   │   │   ├── dropbox_storage.py
+
+│   │   │   ├── __init__.py
+
+│   │   │   ├── local_storage.py
+
+│   │   │   ├── __pycache__
+
+│   │   │   │   ├── base_storage.cpython-313.pyc
+
+│   │   │   │   ├── dropbox_storage.cpython-313.pyc
+
+│   │   │   │   ├── __init__.cpython-313.pyc
+
+│   │   │   │   ├── local_storage.cpython-313.pyc
+
+│   │   │   │   └── usb_storage.cpython-313.pyc
+
+│   │   │   └── usb_storage.py
+
+│   │   └── storage_manager.py
+
+│   ├── smart_heating.egg-info
+
+│   │   ├── dependency_links.txt
+
+│   │   ├── PKG-INFO
+
+│   │   ├── requires.txt
+
+│   │   ├── SOURCES.txt
+
+│   │   └── top_level.txt
+
+│   └── tests
+
+│       ├── __init__.py
+
+│       ├── __pycache__
+
+│       │   ├── __init__.cpython-313.pyc
+
+│       │   ├── test_base_storage.cpython-313-pytest-8.3.5.pyc
+
+│       │   ├── test_dropbox_storage.cpython-313-pytest-8.3.5.pyc
+
+│       │   ├── test_local_storage.cpython-313-pytest-8.3.5.pyc
+
+│       │   ├── test_logger.cpython-313.pyc
+
+│       │   ├── test_logger_flush.cpython-313.pyc
+
+│       │   ├── test_storage_manager.cpython-313-pytest-8.3.5.pyc
+
+│       │   ├── test_switch_heating.cpython-313.pyc
+
+│       │   └── test_usb_storage.cpython-313-pytest-8.3.5.pyc
+
+│       ├── test_base_storage.py
+
+│       ├── test_dropbox_storage.py
+
+│       ├── test_local_storage.py
+
+│       ├── test_logger_flush.py
+
+│       ├── test_logger.py
+
+│       ├── test_storage_manager.py
+
+│       ├── test_switch_heating.py
+
+│       └── test_usb_storage.py
+
+└── frontend
 
 ---
 
