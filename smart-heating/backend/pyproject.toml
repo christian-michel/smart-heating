@@ -1,0 +1,56 @@
+# =========================
+# pyproject.toml pour Smart Heating
+# =========================
+# Ce fichier décrit ton projet Python, ses dépendances, et comment le construire.
+# Il est utilisé par pip et setuptools pour l'installation et le packaging.
+
+# -------------------------
+# Section "project" : informations générales sur ton projet
+# -------------------------
+[project]
+# Nom du projet
+name = "smart-heating"
+
+# Version actuelle du projet (format MAJEUR.MINEUR.PATCH)
+version = "1.0.0"
+
+# Description courte
+description = "Smart thermostat for Raspberry Pi"
+
+# Version minimale de Python requise pour faire tourner le projet
+requires-python = ">=3.10"
+
+# Liste des dépendances Python à installer automatiquement
+# Ici, on inclut Dropbox et le module GPIO pour Raspberry Pi
+dependencies = [
+    "dropbox", # Pour synchroniser les logs sur Dropbox
+    "RPi.GPIO; sys_platform=='linux'" # Pour piloter les GPIO sur Linux (Raspberry Pi)
+]
+
+# -------------------------
+# Section "build-system" : informations pour la construction/installation
+# -------------------------
+[build-system]
+# Déclare les outils nécessaires pour construire le projet
+requires = ["setuptools"] # Setuptools est utilisé pour packager le projet
+
+# Backend qui sera utilisé pour le build
+build-backend = "setuptools.build_meta"
+
+# -------------------------
+# Section "tool.setuptools.packages.find" : quelles sources inclure dans le package
+# -------------------------
+[tool.setuptools.packages.find]
+# Où chercher les packages/modules Python
+where = ["."] # Commence à la racine du projet
+
+# Quels packages inclure
+# Inclut tous les dossiers dont le nom commence par "core" et "services"
+include = ["core*", "services*"]
+
+# =========================
+# Notes pour plus tard :
+# - Si tu ajoutes un dossier "api" ou "frontend" Python, il faudra l'ajouter ici
+# - Les dépendances spécifiques (ex: SQLite, Flask, etc.) peuvent être ajoutées dans "dependencies"
+# - Ce fichier sert aussi à pip pour le mode développement avec `pip install -e .`
+# =========================
