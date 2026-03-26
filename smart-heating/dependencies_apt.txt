@@ -1,0 +1,9 @@
+build-essential
+python3.13-dev
+swig
+libgpiod-dev
+liblgpio-dev
+libexpat1-dev
+libpython3.13-dev
+zlib1g-dev
+libpython3-dev
