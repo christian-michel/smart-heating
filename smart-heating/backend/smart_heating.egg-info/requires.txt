@@ -1,4 +1,0 @@
-dropbox
-
-[:sys_platform == "linux"]
-RPi.GPIO
