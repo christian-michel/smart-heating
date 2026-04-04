@@ -1,34 +1,43 @@
 #!/bin/bash
 
-set -e # stop si erreur
+set -e
 
 echo "Installation de Smart Heating..."
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+INSTALL_DIR="/opt/smart-heating"
 
-echo "Projet : $PROJECT_ROOT"
+echo "Source : $PROJECT_ROOT"
+echo "Installation dans : $INSTALL_DIR"
+
+# --- Étape 0 : copie projet ---
+echo "Copie du projet..."
+
+sudo rm -rf $INSTALL_DIR
+sudo mkdir -p $INSTALL_DIR
+
+sudo cp -r $PROJECT_ROOT/* $INSTALL_DIR
+
+# Permissions
+sudo chown -R $USER:$USER $INSTALL_DIR
 
 # --- Étape 1 : dépendances système ---
 echo "Étape 1 : dépendances système"
-cd "$PROJECT_ROOT/install"
+cd $INSTALL_DIR/install
 sudo ./setup_dependencies.sh
 
 # --- Étape 2 : environnement Python ---
 echo "Étape 2 : création environnement Python"
 
-cd "$PROJECT_ROOT"
+cd $INSTALL_DIR
 
 if [ -d "backend/.venv" ]; then
-    echo "⚠ Environnement existant détecté → suppression"
     rm -rf backend/.venv
 fi
 
 python3 -m venv backend/.venv
 
-# Activation
 source backend/.venv/bin/activate
-
-# Upgrade pip
 pip install --upgrade pip
 
 # --- Étape 3 : dépendances Python ---
@@ -36,13 +45,10 @@ echo "Étape 3 : installation dépendances Python"
 
 pip install -r requirements.txt
 
-# --- Étape 4 : test rapide ---
-echo "Étape 4 : test rapide Python"
+# --- Étape 4 : test ---
+echo "Test..."
 
 python -c "import gpiozero, gpiod; print('✅ GPIO OK')"
 
 echo ""
-echo "Installation terminée avec succès !"
-echo ""
-echo "👉 Pour lancer le projet :"
-echo "source backend/.venv/bin/activate"
+echo "Installation terminée dans $INSTALL_DIR"

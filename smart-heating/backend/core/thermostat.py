@@ -1,16 +1,21 @@
 """
 thermostat.py
 
-Version sécurisée minimale (gpiozero) :
-- try/except autour de update()
-- fail-safe chauffage
-- bouton toggle + logique température inchangés
-- gestion bouton via gpiozero
-- flush LoggerService à l'arrêt
-- suppression du flush forcé après chaque log
+Responsabilité :
+- Piloter le chauffage en fonction de la température
+- Gérer le mode manuel via bouton GPIO
+- Logger les données
+- Assurer un arrêt propre du système
+
+Améliorations :
+- Protection contre les accès concurrents (threading.Lock)
+- Gestion robuste des erreurs capteur (fallback)
+- Correction bug bouton (race condition)
+- Cleanup amélioré avec synchronisation finale
 """
 
 import time
+import threading
 from gpiozero import Button
 
 # Import depuis le package backend
@@ -29,7 +34,7 @@ from backend.services.logger_service import LoggerService
 class Thermostat:
 
     def __init__(self):
-        # Pause initiale pour stabiliser le système
+        # Stabilisation système (boot Raspberry)
         time.sleep(1)
 
         self.sensor = TemperatureSensor()
@@ -39,7 +44,10 @@ class Thermostat:
         self.last_log_time = 0
         self.manual_mode = False
 
-        # Bouton GPIO via gpiozero
+        # 🔒 Protection contre concurrence (GPIO callback vs loop)
+        self.lock = threading.Lock()
+
+        # Bouton GPIO
         try:
             self.button = Button(SWITCH_GPIO, pull_up=True)
             self.button.when_pressed = self.toggle_mode
@@ -49,32 +57,60 @@ class Thermostat:
             print("Le thermostat continue sans gestion du bouton.")
 
     def toggle_mode(self):
-        """Change l'état manuel du chauffage"""
-        self.manual_mode = not self.manual_mode
-        print("\n>>> TOGGLE chauffage :", "ON" if self.manual_mode else "OFF")
+        """
+        Callback bouton (thread gpiozero)
+        → protégé par lock pour éviter race condition
+        """
+        with self.lock:
+            self.manual_mode = not self.manual_mode
+            print("\n>>> TOGGLE chauffage :", "ON" if self.manual_mode else "OFF")
 
     def update(self):
-        """Lecture température et contrôle chauffage + logging"""
+        """
+        Boucle principale :
+        - lecture température
+        - contrôle chauffage
+        - logging
+        """
         try:
-            temperature = self.sensor.get_temperature()
-            print(f"Température : {temperature} °C")
-            print(f"Mode manuel : {'ON' if self.manual_mode else 'OFF'}")
+            with self.lock:
+                temperature = self.sensor.get_temperature()
 
-            # Gestion chauffage
-            if not self.manual_mode:
-                self.heating.turn_off()
-            else:
-                if temperature is not None:
-                    if not self.heating.state and temperature < (TEMPERATURE_TARGET - TEMPERATURE_TOLERANCE):
-                        self.heating.turn_on()
-                    elif self.heating.state and temperature > (TEMPERATURE_TARGET + TEMPERATURE_TOLERANCE):
-                        self.heating.turn_off()
-                else:
-                    print("Température invalide ! Chauffage OFF par sécurité.")
+                print(f"Température : {temperature} °C")
+                print(f"Mode manuel : {'ON' if self.manual_mode else 'OFF'}")
+
+                # ==========================
+                # Gestion chauffage
+                # ==========================
+
+                if not self.manual_mode:
+                    # Mode OFF → sécurité
                     self.heating.turn_off()
 
-            # Logging périodique
+                else:
+                    if temperature is not None:
+                        if (
+                            not self.heating.state
+                            and temperature < (TEMPERATURE_TARGET - TEMPERATURE_TOLERANCE)
+                        ):
+                            self.heating.turn_on()
+
+                        elif (
+                            self.heating.state
+                            and temperature > (TEMPERATURE_TARGET + TEMPERATURE_TOLERANCE)
+                        ):
+                            self.heating.turn_off()
+
+                    else:
+                        print("Température invalide → chauffage OFF (sécurité)")
+                        self.heating.turn_off()
+
+            # ==========================
+            # Logging (hors lock)
+            # ==========================
+
             current_time = time.time()
+
             if current_time - self.last_log_time >= LOG_INTERVAL_SECONDS:
                 self.logger.log(
                     temperature,
@@ -92,21 +128,34 @@ class Thermostat:
             self.heating.turn_off()
 
     def cleanup(self):
-        """Arrêt du chauffage et flush des données Logger"""
+        """
+        Arrêt propre du système :
+        - arrêt chauffage
+        - flush des logs
+        - synchronisation stockage (USB / Dropbox)
+        """
         print("Nettoyage thermostat...")
+
         try:
             self.heating.turn_off()
         except Exception:
             pass
 
-        # Flush final du buffer Logger
+        # Flush Logger
         try:
             if hasattr(self.logger, 'buffer') and self.logger.buffer:
                 active_storage = self.logger.storage_manager.get_active_storage()
                 self.logger._flush_to_disk(active_storage.get_path())
                 print("Logger flush final exécuté.")
         except Exception as e:
-            print(f"Erreur lors du flush final du Logger : {e}")
+            print(f"Erreur flush Logger : {e}")
+
+        # 🔥 Synchronisation finale (IMPORTANT)
+        try:
+            self.logger.storage_manager.flush_all()
+            print("Synchronisation finale effectuée.")
+        except Exception as e:
+            print(f"Erreur synchronisation finale : {e}")
 
 
 # ==========================
@@ -114,7 +163,8 @@ class Thermostat:
 # ==========================
 
 if __name__ == "__main__":
-    print("Test thermostat sécurisé minimal (gpiozero)...")
+    print("=== Test thermostat (version robuste) ===")
+
     thermostat = Thermostat()
 
     try:
