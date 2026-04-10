@@ -2,53 +2,149 @@
 
 set -e
 
-echo "Installation de Smart Heating..."
+echo "=== Installation de Smart Heating ==="
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INSTALL_DIR="/opt/smart-heating"
+USER_NAME="smartheating"
+SERVICE_NAME="smart-heating"
 
 echo "Source : $PROJECT_ROOT"
 echo "Installation dans : $INSTALL_DIR"
 
-# --- Étape 0 : copie projet ---
-echo "Copie du projet..."
+# ==========================
+# === Étape 0 : utilisateur
+# ==========================
+
+echo "Création utilisateur $USER_NAME..."
+
+if id "$USER_NAME" &>/dev/null; then
+    echo "Utilisateur déjà existant."
+else
+    sudo useradd -m -s /bin/bash $USER_NAME
+    echo "Utilisateur créé."
+fi
+
+# Groupes nécessaires GPIO
+sudo usermod -aG gpio $USER_NAME
+sudo usermod -aG dialout $USER_NAME
+
+# ==========================
+# === Étape 1 : structure
+# ==========================
+
+echo "Création structure projet..."
 
 sudo rm -rf $INSTALL_DIR
 sudo mkdir -p $INSTALL_DIR
+sudo mkdir -p $INSTALL_DIR/data
+
+# ==========================
+# === Étape 2 : copie projet
+# ==========================
+
+echo "Copie du projet..."
 
 sudo cp -r $PROJECT_ROOT/* $INSTALL_DIR
 
-# Permissions
-sudo chown -R $USER:$USER $INSTALL_DIR
+# ==========================
+# === Étape 3 : permissions
+# ==========================
 
-# --- Étape 1 : dépendances système ---
-echo "Étape 1 : dépendances système"
+echo "Configuration des permissions..."
+
+sudo chown -R $USER_NAME:$USER_NAME $INSTALL_DIR
+sudo chmod -R 755 $INSTALL_DIR
+
+# ==========================
+# === Étape 4 : dépendances système
+# ==========================
+
+echo "Installation dépendances système..."
+
 cd $INSTALL_DIR/install
 sudo ./setup_dependencies.sh
 
-# --- Étape 2 : environnement Python ---
-echo "Étape 2 : création environnement Python"
+# ==========================
+# === Étape 5 : environnement Python
+# ==========================
+
+echo "Création environnement Python..."
 
 cd $INSTALL_DIR
 
-if [ -d "backend/.venv" ]; then
-    rm -rf backend/.venv
-fi
+# Nettoyage ancien venv
+sudo rm -rf venv
 
-python3 -m venv backend/.venv
+# Création venv avec bon user
+sudo -u $USER_NAME python3 -m venv venv
 
-source backend/.venv/bin/activate
+# Installation dépendances Python
+sudo -u $USER_NAME bash -c "
+source $INSTALL_DIR/venv/bin/activate
 pip install --upgrade pip
+pip install -r $INSTALL_DIR/requirements.txt
+"
 
-# --- Étape 3 : dépendances Python ---
-echo "Étape 3 : installation dépendances Python"
+# ==========================
+# === Étape 6 : test Python
+# ==========================
 
-pip install -r requirements.txt
+echo "Test environnement Python..."
 
-# --- Étape 4 : test ---
-echo "Test..."
+sudo -u $USER_NAME $INSTALL_DIR/venv/bin/python -c "import gpiozero; print('✅ GPIO OK')"
 
-python -c "import gpiozero, gpiod; print('✅ GPIO OK')"
+# ==========================
+# === Étape 7 : systemd
+# ==========================
+
+echo "Installation du service systemd..."
+
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+
+sudo bash -c "cat > $SERVICE_FILE" <<EOF
+[Unit]
+Description=Smart Heating Thermostat
+After=network.target
+
+[Service]
+User=$USER_NAME
+Group=$USER_NAME
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/venv/bin/python -m backend.core.thermostat
+
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+
+Environment=PYTHONUNBUFFERED=1
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Recharge systemd
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+
+# Activation + démarrage
+sudo systemctl enable $SERVICE_NAME
+sudo systemctl start $SERVICE_NAME
+
+echo "Service $SERVICE_NAME installé et démarré"
+
+# ==========================
+# === FIN
+# ==========================
 
 echo ""
-echo "Installation terminée dans $INSTALL_DIR"
+echo "=== Installation terminée ==="
+echo "Utilisateur : $USER_NAME"
+echo "Dossier : $INSTALL_DIR"
+echo ""
+echo "Commandes utiles :"
+echo " sudo systemctl status $SERVICE_NAME"
+echo " journalctl -u $SERVICE_NAME -f"

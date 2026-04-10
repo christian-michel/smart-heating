@@ -23,13 +23,29 @@ Ce module ne doit JAMAIS :
 
 from backend.config import LED_GPIO
 
-# Tentative d'import GPIO
+# ==========================
+# === INIT GPIO ROBUSTE
+# ==========================
+
+GPIO_AVAILABLE = False
+
 try:
-    from gpiozero import LED
+    from gpiozero import LED, Device
+    from gpiozero.pins.lgpio import LGPIOFactory
+
+    # 🔥 Force le backend GPIO (CRITIQUE pour user non-root)
+    Device.pin_factory = LGPIOFactory()
+
     GPIO_AVAILABLE = True
-except Exception:
+
+except Exception as e:
+    print(f"[HeatingSystem] GPIO non disponible → mode simulation : {e}")
     GPIO_AVAILABLE = False
 
+
+# ==========================
+# === CLASSE PRINCIPALE
+# ==========================
 
 class HeatingSystem:
     """
@@ -49,12 +65,17 @@ class HeatingSystem:
             try:
                 self.led = LED(LED_GPIO)
                 print(f"[HeatingSystem] GPIO actif (pin={LED_GPIO})")
+
             except Exception as e:
-                print(f"[HeatingSystem] Erreur GPIO → mode simulation : {e}")
+                print(f"[HeatingSystem] Erreur init GPIO → simulation : {e}")
                 self.simulation_mode = True
         else:
-            print("[HeatingSystem] GPIO indisponible → mode simulation")
+            print("[HeatingSystem] Mode simulation activé")
             self.simulation_mode = True
+
+    # ==========================
+    # === ON / OFF
+    # ==========================
 
     def turn_on(self):
         """
@@ -66,8 +87,11 @@ class HeatingSystem:
         if not self.simulation_mode and self.led:
             try:
                 self.led.on()
+                print("[HeatingSystem] Chauffage ON")
+
             except Exception as e:
-                print(f"[HeatingSystem] Erreur turn_on GPIO : {e}")
+                print(f"[HeatingSystem] Erreur GPIO turn_on : {e}")
+
         else:
             print("[HeatingSystem] (simulation) chauffage ON")
 
@@ -83,12 +107,19 @@ class HeatingSystem:
         if not self.simulation_mode and self.led:
             try:
                 self.led.off()
+                print("[HeatingSystem] Chauffage OFF")
+
             except Exception as e:
-                print(f"[HeatingSystem] Erreur turn_off GPIO : {e}")
+                print(f"[HeatingSystem] Erreur GPIO turn_off : {e}")
+
         else:
             print("[HeatingSystem] (simulation) chauffage OFF")
 
         self.state = False
+
+    # ==========================
+    # === UTILS
+    # ==========================
 
     def is_on(self) -> bool:
         """

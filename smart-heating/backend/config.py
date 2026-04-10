@@ -31,7 +31,7 @@ SWITCH_GPIO = 27
 # === TEMPERATURE
 # ==========================
 
-TEMPERATURE_TARGET = 22.0
+TEMPERATURE_TARGET = 19.0
 TEMPERATURE_TOLERANCE = 0.5
 
 # ==========================
@@ -45,7 +45,7 @@ USB_MOUNT_PATH = "/mnt/usb_backup"
 SUPPORTED_USB_FILESYSTEMS = ["vfat", "ntfs", "ext4", "exfat"]
 
 # Dossier fallback local
-LOCAL_STORAGE_PATH = "logs"
+LOCAL_STORAGE_PATH = "/opt/smart-heating/data"
 
 # ==========================
 # === APPLICATION
