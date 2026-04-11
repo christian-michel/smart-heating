@@ -312,8 +312,3 @@ Built with ❤️ for Raspberry Pi IoT automation
 ## 📄 License
 
 GPL v3 License
-
-
-
-Tu veux monter encore d’un niveau ?
-```
