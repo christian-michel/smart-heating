@@ -1,267 +1,319 @@
-# 🏠 smart-heating
-thermostat-iot
+# 🔥 Smart Heating System
 
-## 1️⃣ Présentation
-
-Ce projet a pour objectif de **créer un système domotique pour piloter le chauffage d’une maison** à l’aide d’un Raspberry Pi, d’une sonde de température, d’une LED représentant le chauffage et d’un interrupteur physique.  
-Le système est conçu pour être **pilotable à distance via une application web** et pour fonctionner en **logiciel libre**, avec un enregistrement automatique des températures sur une clé USB, rotation journalière, et sauvegarde future sur Dropbox.
-
-Le projet se concentre sur :  
-
-- **Mesure de la température** et pilotage du chauffage  
-- **Interface physique** : bouton poussoir pour activer/désactiver le chauffage  
-- **Journalisation** des relevés de température en CSV  
-- **Démarrage et extinction orchestrés** du Raspberry Pi  
+> IoT thermostat system for Raspberry Pi with **automatic storage management (USB / Dropbox / Local)** and **robust systemd deployment**
 
 ---
 
-## 2️⃣ Arborescence du projet
+## 📌 Overview
+
+Smart Heating is a **production-ready thermostat system** designed for Raspberry Pi.
+
+It controls a heating system using:
+- 🌡 Temperature sensor (DS18B20)
+- 🔘 Physical button (manual mode)
+- 💡 GPIO-controlled relay (via LED simulation)
+
+---
+
+## ⚙️ Key Features
+
+✅ Automatic heating control  
+✅ Manual override via button  
+✅ Robust GPIO handling (lgpio)  
+✅ Data logging (CSV)  
+✅ Smart storage management:
+- 🥇 USB (priority)
+- 🥈 Dropbox
+- 🥉 Local fallback
+
+✅ Automatic synchronization:
+- Local → USB
+- Local → Dropbox
+- USB → Dropbox
+
+✅ systemd service (auto start on boot)  
+✅ Fully automated installation  
+
+---
+
+## 🧱 Project Structure
+
+```
 
 smart-heating/
-
-├── backend
-
-│   ├── config.py
-
-│   ├── core
-
-│   │   ├── heating.py
-
-│   │   ├── __init__.py
-
-│   │   ├── __pycache__
-
-│   │   │   ├── heating.cpython-313.pyc
-
-│   │   │   ├── __init__.cpython-313.pyc
-
-│   │   │   ├── switch.cpython-313.pyc
-
-│   │   │   ├── temperature.cpython-313.pyc
-
-│   │   │   └── thermostat.cpython-313.pyc
-
-│   │   ├── switch.py
-
-│   │   ├── temperature.py
-
-│   │   └── thermostat.py
-
-│   ├── data
-
-│   │   ├── temperature_2026-03-11_23-31-56.csv
-
-│   │   ├── temperature_2026-03-11_23-34-23.csv
-
-│   │   ├── temperature_2026-03-11_23-54-23.csv
-
-│   │   ├── temperature_2026-03-12_00-04-00.csv
-
-│   │   ├── temperature_2026-03-12_06-06-44.csv
-
-│   │   └── temperature_2026-03-12_13-05-56.csv
-
-│   ├── __init__.py
-
-│   ├── logs
-
-│   │   ├── log_2026-02-20.csv
-
-│   │   └── log_2026-02-21.csv
-
-│   ├── __pycache__
-
-│   │   ├── config.cpython-313.pyc
-
-│   │   └── __init__.cpython-313.pyc
-
-│   ├── pyproject.toml
-
-│   ├── services
-
-│   │   ├── __init__.py
-
-│   │   ├── logger_service.py
-
-│   │   ├── __pycache__
-
-│   │   │   ├── __init__.cpython-313.pyc
-
-│   │   │   ├── logger_service.cpython-313.pyc
-
-│   │   │   └── storage_manager.cpython-313.pyc
-
-│   │   ├── storage
-
-│   │   │   ├── base_storage.py
-
-│   │   │   ├── dropbox_storage.py
-
-│   │   │   ├── __init__.py
-
-│   │   │   ├── local_storage.py
-
-│   │   │   ├── __pycache__
-
-│   │   │   │   ├── base_storage.cpython-313.pyc
-
-│   │   │   │   ├── dropbox_storage.cpython-313.pyc
-
-│   │   │   │   ├── __init__.cpython-313.pyc
-
-│   │   │   │   ├── local_storage.cpython-313.pyc
-
-│   │   │   │   └── usb_storage.cpython-313.pyc
-
-│   │   │   └── usb_storage.py
-
-│   │   └── storage_manager.py
-
-│   ├── smart_heating.egg-info
-
-│   │   ├── dependency_links.txt
-
-│   │   ├── PKG-INFO
-
-│   │   ├── requires.txt
-
-│   │   ├── SOURCES.txt
-
-│   │   └── top_level.txt
-
-│   └── tests
-
-│       ├── __init__.py
-
-│       ├── __pycache__
-
-│       │   ├── __init__.cpython-313.pyc
-
-│       │   ├── test_base_storage.cpython-313-pytest-8.3.5.pyc
-
-│       │   ├── test_dropbox_storage.cpython-313-pytest-8.3.5.pyc
-
-│       │   ├── test_local_storage.cpython-313-pytest-8.3.5.pyc
-
-│       │   ├── test_logger.cpython-313.pyc
-
-│       │   ├── test_logger_flush.cpython-313.pyc
-
-│       │   ├── test_storage_manager.cpython-313-pytest-8.3.5.pyc
-
-│       │   ├── test_switch_heating.cpython-313.pyc
-
-│       │   └── test_usb_storage.cpython-313-pytest-8.3.5.pyc
-
-│       ├── test_base_storage.py
-
-│       ├── test_dropbox_storage.py
-
-│       ├── test_local_storage.py
-
-│       ├── test_logger_flush.py
-
-│       ├── test_logger.py
-
-│       ├── test_storage_manager.py
-
-│       ├── test_switch_heating.py
-
-│       └── test_usb_storage.py
-
-└── frontend
+│
+├── backend/
+│   ├── core/
+│   │   ├── thermostat.py      # 🔥 Main logic
+│   │   ├── heating.py         # GPIO control
+│   │   └── temperature.py     # Sensor reading
+│   │
+│   ├── services/
+│   │   ├── logger_service.py  # CSV logging
+│   │   ├── storage_manager.py # Storage orchestration
+│   │   └── storage/
+│   │       ├── usb_storage.py
+│   │       ├── dropbox_storage.py
+│   │       └── local_storage.py
+│
+├── install/
+│   ├── install.sh             # 🚀 Installer (PRO)
+│   ├── uninstall.sh           # 🧹 Uninstaller (PRO)
+│   └── setup_dependencies.sh
+│
+├── data/                      # Local fallback storage
+└── README.md
+
+```
 
 ---
 
-## 3️⃣ Besoin et justification du projet
+## 🧠 How It Works
 
-- Permettre à l’utilisateur de **contrôler le chauffage** facilement  
-- Avoir un **historique précis** de la température pour analyse  
-- Sécuriser la maison avec un **arrêt automatique du chauffage et du Raspberry**  
-- Fournir une base solide pour **une future application web avec React**  
-- Utiliser uniquement des **logiciels libres** et matériels standards (Raspberry Pi, GPIO, sondes DS18B20)  
+### 🔥 Heating Logic
+
+- Manual mode ON → heating forced ON
+- Manual mode OFF → thermostat mode:
+
+```
+
+if temp < target - tolerance → ON
+if temp > target + tolerance → OFF
+
+````
 
 ---
 
-## 4️⃣ Scénario de fonctionnement
+### 💾 Storage Strategy
 
-1. **Allumage du Raspberry Pi**  
-   - Démarrage à distance via Wake on LAN intégré à la box  
-   - Initialisation des GPIO et des modules  
+Priority order:
 
-2. **Pilotage du chauffage**  
-   - Lecture continue de la sonde de température  
-   - Interrupteur physique en mode **toggle**  
-   - Chauffage actif si le mode manuel est activé et température < seuil  
-
-3. **Journalisation automatique**  
-   - Relevé toutes les X secondes dans un fichier CSV sur la clé USB  
-   - Rotation automatique tous les jours à minuit  
-   - Sauvegarde future possible sur Dropbox  
-
-4. **Arrêt orchestré**  
-   - Bouton ou interface web peut déclencher l’arrêt du programme  
-   - Chauffage coupé selon l’état de l’interrupteur  
-   - CSV sauvegardé sur la clé USB  
-   - Raspberry s’éteint proprement  
-   - Interface web affiche “Raspberry éteint”  
+1. **USB (/mnt/usb_backup)**
+2. **Dropbox**
+3. **Local (/opt/smart-heating/data)**
 
 ---
 
-## 5️⃣ Environnement technique
+### 🔄 Synchronization Rules
 
-### Python
+| Source | Destination | When |
+|------|--------|------|
+| Local | USB | once when USB appears |
+| Local | Dropbox | once |
+| USB | Dropbox | every 60s |
 
-- Version recommandée : **Python 3.13.x**  
-- Installation sur Raspberry Pi OS :
+---
 
-```bash
-sudo apt update
-sudo apt install python3 python3-pip
-```
+## 🧰 Installation
 
-- Installer les dépendances du projet :
-
-```bash
-pip3 install -r requirements.txt
-```
-
-### Clé USB de sauvegarde des températures (fichiers CSV)
-
-- La clé USB doit être montée automatiquement au démarrage.
-- Exemple pour la clé nommée SAUVEGARDE :
-
-#### 1. Créer un point de montage :
+### 📦 Run installer
 
 ```bash
-sudo mkdir -p /media/maison/SAUVEGARDE
-```
+sudo ./install/install.sh
+````
 
-#### 2. Ajouter dans /etc/fstab (avec label ou UUID) :
+---
 
-```bash
-LABEL=SAUVEGARDE  /media/maison/SAUVEGARDE  ext4  defaults,nofail  0  2
-```
+### ⚠️ After install
 
-#### 3. Monter toutes les partitions :
+Edit environment file:
 
 ```bash
-sudo mount -a
+sudo nano /opt/smart-heating/.env
 ```
 
-#### 4. Vérifier que la clé est accessible :
+Add:
+
+```env
+DROPBOX_APP_KEY=
+DROPBOX_APP_SECRET=
+DROPBOX_REFRESH_TOKEN=
+```
+
+Restart service:
 
 ```bash
-ls /media/maison/SAUVEGARDE
+sudo systemctl restart smart-heating
 ```
 
-### Raspberry Pi
+---
 
-#### GPIO utilisés :
+## 🧹 Uninstall
 
-- LED (chauffage) : GPIO 17
-- Bouton poussoir : GPIO 27
-- Sonde DS18B20 : GPIO 4 (1-Wire)
-- Matériel testé : Raspberry Pi 3
+```bash
+sudo ./install/uninstall.sh
+```
 
-#### OS : Raspberry Pi OS
+✔ Removes:
+
+* service
+* project files
+* user (if safe)
+
+❌ Keeps:
+
+* USB data
+* CSV files
+
+---
+
+## 🔌 Hardware Setup
+
+| Component   | GPIO    |
+| ----------- | ------- |
+| LED / Relay | GPIO 17 |
+| Button      | GPIO 27 |
+| DS18B20     | GPIO 4  |
+
+---
+
+## 💽 USB Configuration (EXT4)
+
+### Recommended setup
+
+```bash
+sudo mkfs.ext4 /dev/sda1
+sudo mkdir -p /mnt/usb_backup
+```
+
+---
+
+### Manual mount
+
+```bash
+sudo mount /dev/sda1 /mnt/usb_backup
+sudo chown -R smartheating:smartheating /mnt/usb_backup
+```
+
+---
+
+## ☁️ Dropbox Setup
+
+### 1️⃣ Create App
+
+Go to:
+👉 [https://www.dropbox.com/developers/apps](https://www.dropbox.com/developers/apps)
+
+* Create App
+* Scoped access
+* Full Dropbox
+
+---
+
+### 2️⃣ Generate Token
+
+* Enable refresh token
+* Copy:
+
+```
+APP_KEY
+APP_SECRET
+REFRESH_TOKEN
+```
+
+---
+
+### 3️⃣ Add to `.env`
+
+---
+
+## 📊 Data Logging
+
+CSV format:
+
+```
+timestamp,temperature,heating,switch
+2026-04-10 12:00:00,21.5,True,False
+```
+
+---
+
+## 🔍 Monitoring
+
+### Service status
+
+```bash
+sudo systemctl status smart-heating
+```
+
+### Logs
+
+```bash
+journalctl -u smart-heating -f
+```
+
+---
+
+## 🧪 Debug Tips
+
+### GPIO test
+
+```bash
+python -c "from gpiozero import LED; LED(17).on()"
+```
+
+### Check USB
+
+```bash
+lsblk
+mount | grep usb_backup
+```
+
+---
+
+## 🚀 Run Manually
+
+```bash
+cd /opt/smart-heating
+source venv/bin/activate
+python -m backend.core.thermostat
+```
+
+---
+
+## 🛠 Troubleshooting
+
+### ❌ LED not working
+
+* Check GPIO group
+* Check pin_factory = lgpio
+
+---
+
+### ❌ USB not used
+
+* Check mount
+* Check permissions
+
+---
+
+### ❌ Dropbox not syncing
+
+* Check `.env`
+* Restart service
+
+---
+
+## 📈 Future Improvements
+
+* Web dashboard
+* MQTT integration
+* Remote control API
+* OTA updates
+
+---
+
+## 👨‍💻 Author
+
+Built with ❤️ for Raspberry Pi IoT automation
+
+---
+
+## 📄 License
+
+GPL v3 License
+
+
+
+Tu veux monter encore d’un niveau ?
+```
