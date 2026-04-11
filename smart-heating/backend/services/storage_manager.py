@@ -18,9 +18,11 @@ Objectifs :
 - robustesse maximale
 - aucune exception bloquante
 - comportement prévisible
+- logs explicites pour debug
 """
 
 import time
+import os
 
 from backend.services.storage.usb_storage import USBStorage
 from backend.services.storage.local_storage import LocalStorage
@@ -30,6 +32,8 @@ from backend.services.storage.dropbox_storage import DropboxStorage
 class StorageManager:
 
     def __init__(self):
+        print("[StorageManager] Initialisation...")
+
         self.usb_storage = USBStorage()
         self.dropbox_storage = DropboxStorage()
         self.local_storage = LocalStorage()
@@ -51,18 +55,34 @@ class StorageManager:
     # ==========================
 
     def _detect_preferred_storage(self):
+        """
+        Détection robuste :
+        - USB dispo ET writable
+        - sinon Dropbox
+        - sinon local
+        """
+
+        # === USB ===
         try:
-            if self.usb_storage.is_available():
+            if self._is_usb_available():
+                print("[StorageManager] USB disponible ✅")
                 return self.usb_storage
+            else:
+                print("[StorageManager] USB indisponible ❌")
         except Exception as e:
             print(f"[StorageManager] Erreur USB : {e}")
 
+        # === Dropbox ===
         try:
-            if self.dropbox_storage.is_available():
+            if self._is_dropbox_available():
+                print("[StorageManager] Dropbox disponible ✅")
                 return self.dropbox_storage
+            else:
+                print("[StorageManager] Dropbox indisponible ❌")
         except Exception as e:
             print(f"[StorageManager] Erreur Dropbox : {e}")
 
+        print("[StorageManager] Fallback → LOCAL")
         return self.local_storage
 
     def get_active_storage(self):
@@ -78,13 +98,7 @@ class StorageManager:
         # === Initialisation ===
         if self.active_storage is None:
             self.active_storage = preferred_storage
-
-            if isinstance(self.active_storage, USBStorage):
-                print("Stockage USB détecté.")
-            elif isinstance(self.active_storage, DropboxStorage):
-                print("Stockage Dropbox détecté.")
-            else:
-                print("Mode local (USB et Dropbox indisponibles).")
+            self._log_active_storage()
 
         # ==========================
         # === SYNCHRONISATIONS
@@ -100,31 +114,35 @@ class StorageManager:
 
         if type(preferred_storage) != type(self.active_storage):
 
+            print("[StorageManager] Changement de stockage détecté")
+
             if isinstance(preferred_storage, USBStorage):
-                print("Bascule → USB")
+                print("→ Bascule vers USB")
 
             elif isinstance(preferred_storage, DropboxStorage):
-                print("Bascule → Dropbox")
+                print("→ Bascule vers Dropbox")
 
             else:
-                print("Bascule → Local (fallback)")
+                print("→ Bascule vers LOCAL (fallback)")
 
                 # reset flags
                 self.local_synced_to_usb = False
                 self.local_synced_to_dropbox = False
 
             self.active_storage = preferred_storage
+            self._log_active_storage()
 
     # ==========================
-    # === SYNC MÉTHODES
+    # === SYNCHRONISATIONS
     # ==========================
 
     def _sync_local_to_usb(self, preferred_storage):
         if isinstance(preferred_storage, USBStorage) and not self.local_synced_to_usb:
             try:
-                print("Sync local → USB...")
+                print("[StorageManager] Sync local → USB...")
                 self.local_storage.sync(self.usb_storage)
                 self.local_synced_to_usb = True
+                print("[StorageManager] Sync local → USB OK")
             except Exception as e:
                 print(f"[StorageManager] Erreur sync local→USB : {e}")
 
@@ -134,9 +152,10 @@ class StorageManager:
             and not self.local_synced_to_dropbox
         ):
             try:
-                print("Sync local → Dropbox...")
+                print("[StorageManager] Sync local → Dropbox...")
                 self.local_storage.sync(self.dropbox_storage)
                 self.local_synced_to_dropbox = True
+                print("[StorageManager] Sync local → Dropbox OK")
             except Exception as e:
                 print(f"[StorageManager] Erreur sync local→Dropbox : {e}")
 
@@ -149,19 +168,35 @@ class StorageManager:
             and current_time - self.last_dropbox_sync >= self.dropbox_sync_interval
         ):
             try:
-                print("Sync USB → Dropbox...")
+                print("[StorageManager] Sync USB → Dropbox...")
                 self.dropbox_storage.sync(self.usb_storage)
                 self.last_dropbox_sync = current_time
+                print("[StorageManager] Sync USB → Dropbox OK")
             except Exception as e:
                 print(f"[StorageManager] Erreur sync USB→Dropbox : {e}")
 
     # ==========================
-    # === HELPERS SAFE
+    # === HELPERS ROBUSTES
     # ==========================
 
     def _is_usb_available(self):
+        """
+        Vérifie :
+        - existence
+        - droits écriture
+        """
         try:
-            return self.usb_storage.is_available()
+            path = self.usb_storage.get_path()
+
+            if not os.path.exists(path):
+                return False
+
+            if not os.access(path, os.W_OK):
+                print("[StorageManager] USB non writable ❌")
+                return False
+
+            return True
+
         except Exception:
             return False
 
@@ -172,6 +207,20 @@ class StorageManager:
             return False
 
     # ==========================
+    # === LOGGING UTILE
+    # ==========================
+
+    def _log_active_storage(self):
+        if isinstance(self.active_storage, USBStorage):
+            print("[StorageManager] STOCKAGE ACTIF → USB")
+
+        elif isinstance(self.active_storage, DropboxStorage):
+            print("[StorageManager] STOCKAGE ACTIF → Dropbox")
+
+        else:
+            print("[StorageManager] STOCKAGE ACTIF → LOCAL")
+
+    # ==========================
     # === FLUSH FINAL (CRITIQUE)
     # ==========================
 
@@ -179,21 +228,23 @@ class StorageManager:
         """
         Forcer une synchronisation finale (appelé à l'arrêt du système)
         """
-        print("Flush global des stockages...")
+        print("[StorageManager] Flush global des stockages...")
 
         try:
             if self._is_usb_available():
-                print("Sync final local → USB")
+                print("[StorageManager] Sync final local → USB")
                 self.local_storage.sync(self.usb_storage)
         except Exception as e:
             print(f"[StorageManager] Erreur flush USB : {e}")
 
         try:
             if self._is_dropbox_available():
-                print("Sync final vers Dropbox")
+                print("[StorageManager] Sync final vers Dropbox")
+
                 if self._is_usb_available():
                     self.dropbox_storage.sync(self.usb_storage)
                 else:
                     self.dropbox_storage.sync(self.local_storage)
+
         except Exception as e:
             print(f"[StorageManager] Erreur flush Dropbox : {e}")

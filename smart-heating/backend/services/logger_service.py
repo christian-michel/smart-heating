@@ -29,11 +29,12 @@ class LoggerService:
 
     Gère :
     - buffer RAM
-    - écriture CSV sur le stockage le plus fiable
-    - synchronisation vers USB / Dropbox
+    - écriture CSV sur stockage actif
+    - synchronisation via StorageManager
     """
 
     def __init__(self, base_path: str = None, enable_sync: bool = True):
+
         self.base_path_override = base_path
         self.enable_sync = enable_sync
 
@@ -58,9 +59,11 @@ class LoggerService:
     # ==========================
     # === LOG PRINCIPAL
     # ==========================
+
     def log(self, temperature: float, heating_state: bool, switch_state: bool):
         try:
             base_path = self._get_base_path()
+
             os.makedirs(base_path, exist_ok=True)
 
             row = [
@@ -69,20 +72,28 @@ class LoggerService:
                 heating_state,
                 switch_state
             ]
+
             self.buffer.append(row)
 
             print(f"[Logger] buffer size = {len(self.buffer)}")
 
             current_time = time.time()
             time_since_last_flush = current_time - self.last_flush_time
-            should_flush = len(self.buffer) >= self.buffer_limit or time_since_last_flush >= self.flush_interval
+
+            should_flush = (
+                len(self.buffer) >= self.buffer_limit
+                or time_since_last_flush >= self.flush_interval
+            )
 
             if should_flush:
                 print("[Logger] condition de flush atteinte")
+
                 self._flush_to_disk(base_path)
                 self.last_flush_time = current_time
+
+                # Synchronisation globale
                 if self.enable_sync and self.storage_manager:
-                    print("[Logger] synchronisation StorageManager après flush")
+                    print("[Logger] refresh StorageManager")
                     self.storage_manager.refresh()
 
         except Exception as e:
@@ -91,23 +102,35 @@ class LoggerService:
     # ==========================
     # === PATH
     # ==========================
+
     def _get_base_path(self) -> str:
+        """
+        Récupère le chemin du stockage actif via StorageManager
+        """
+
+        # Mode TEST
         if self.base_path_override is not None:
+            print(f"[Logger] mode TEST → {self.base_path_override}")
             return self.base_path_override
 
-        # Priorité USB, sinon local
-        if self.storage_manager.usb_storage.is_available():
-            path = self.storage_manager.usb_storage.get_path()
-            print(f"[Logger] chemin actif (USB) = {path}")
+        try:
+            storage = self.storage_manager.get_active_storage()
+            path = storage.get_path()
+
+            print(f"[Logger] stockage actif → {type(storage).__name__} | {path}")
+
             return path
-        path = self.storage_manager.local_storage.get_path()
-        print(f"[Logger] chemin actif (LOCAL) = {path}")
-        return path
+
+        except Exception as e:
+            print(f"[Logger] erreur récupération storage → fallback local : {e}")
+            return "/tmp"
 
     # ==========================
     # === FLUSH DISQUE
     # ==========================
+
     def _flush_to_disk(self, base_path: str):
+
         if not self.buffer:
             print("[Logger] buffer vide, rien à écrire")
             return
@@ -116,47 +139,48 @@ class LoggerService:
         file_exists = os.path.exists(file_path)
 
         try:
-            print(f"[Logger] flush vers disque : {file_path}")
+            print(f"[Logger] flush vers : {file_path}")
+
             with open(file_path, mode="a", newline="") as file:
                 writer = csv.writer(file)
+
                 if not file_exists:
                     writer.writerow(["timestamp", "temperature", "heating", "switch"])
+
                 writer.writerows(self.buffer)
 
             print(f"[Logger] {len(self.buffer)} lignes écrites")
+
             self.buffer.clear()
 
         except PermissionError:
-            print(f"⚠ Accès refusé : {file_path}")
+            print(f"⚠ [Logger] accès refusé : {file_path}")
+
         except Exception as e:
-            print(f"⚠ Erreur flush : {e}")
+            print(f"⚠ [Logger] erreur flush : {e}")
 
     # ==========================
-    # === CLOSE (FLUSH FINAL INTELLIGENT)
+    # === CLOSE (FLUSH FINAL)
     # ==========================
+
     def close(self):
         """
         Flush final intelligent :
-        1. Écrit sur USB si disponible
-        2. Sinon sur local
-        3. Puis synchronisation finale Dropbox si activée
+        - écrit sur stockage actif
+        - puis sync globale
         """
+
         try:
             print("[Logger] fermeture → flush final")
 
-            # 1️⃣ Choix stockage pour écriture
-            if self.storage_manager and self.storage_manager.usb_storage.is_available():
-                final_path = self.storage_manager.usb_storage.get_path()
-            else:
-                final_path = self.storage_manager.local_storage.get_path() if self.storage_manager else self.base_path_override
+            base_path = self._get_base_path()
 
-            self._flush_to_disk(final_path)
+            self._flush_to_disk(base_path)
 
-            # 2️⃣ Sync finale Dropbox si activée
             if self.enable_sync and self.storage_manager:
                 print("[Logger] flush global des stockages...")
-                self.storage_manager.refresh()
-                print("Synchronisation finale effectuée.")
+                self.storage_manager.flush_all()
+                print("[Logger] synchronisation finale effectuée")
 
         except Exception as e:
             print(f"⚠ LoggerService.close : erreur → {e}")
@@ -164,6 +188,7 @@ class LoggerService:
     # ==========================
     # === UTIL
     # ==========================
+
     def _generate_session_filename(self):
         timestamp_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         return f"temperature_{timestamp_str}.csv"
