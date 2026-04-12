@@ -102,6 +102,7 @@ sudo -u $USER_NAME bash -c "
 source $INSTALL_DIR/venv/bin/activate
 pip install --upgrade pip
 pip install -r $INSTALL_DIR/requirements.txt
+pip install uvicorn fastapi
 "
 
 # ==========================
@@ -115,6 +116,7 @@ cat > $ENV_FILE <<EOF
 DROPBOX_APP_KEY=
 DROPBOX_APP_SECRET=
 DROPBOX_REFRESH_TOKEN=
+API_TOKEN=changeme
 EOF
     echo "Fichier .env créé"
 else
@@ -125,45 +127,39 @@ chown $USER_NAME:$USER_NAME $ENV_FILE
 chmod 600 $ENV_FILE
 
 # ==========================
-# === USB MANAGEMENT (FIX PRO)
+# === USB MANAGEMENT (FIABLE)
 # ==========================
 
 echo "Configuration USB..."
 
-MOUNT_COUNT=$(mount | grep "$USB_MOUNT" | wc -l)
+# Nettoyage double montage
+while mount | grep "$USB_MOUNT" > /dev/null; do
+    umount $USB_MOUNT || break
+done
 
-if [ "$MOUNT_COUNT" -gt 1 ]; then
-    echo "⚠ Double montage détecté"
-    while mount | grep "$USB_MOUNT" > /dev/null; do
-        umount $USB_MOUNT || break
-    done
-fi
-
-echo "Détection périphérique USB..."
-
+# Détection USB fiable
 USB_DEVICE=""
 
 if [ -e "/dev/sda1" ]; then
     USB_DEVICE="/dev/sda1"
 else
-    USB_DEVICE=$(lsblk -rpno NAME,TYPE,TRAN | grep "part usb" | awk '{print $1}' | head -n 1)
+    USB_DEVICE=$(lsblk -rpno NAME,TRAN | grep usb | awk '{print $1}' | head -n 1)
 fi
 
-if [ -z "$USB_DEVICE" ]; then
-    echo "⚠ Aucun périphérique USB détecté"
-else
+if [ -n "$USB_DEVICE" ]; then
     echo "USB détectée : $USB_DEVICE"
+
+    if mount $USB_DEVICE $USB_MOUNT; then
+        echo "✅ Montage OK"
+    else
+        echo "❌ Échec montage"
+    fi
+else
+    echo "⚠ Aucun USB détecté"
 fi
 
-if ! mount | grep "$USB_MOUNT" > /dev/null && [ -n "$USB_DEVICE" ]; then
-    echo "Montage $USB_DEVICE → $USB_MOUNT"
-
-    mount $USB_DEVICE $USB_MOUNT || echo "❌ Échec montage"
-fi
-
+# Permissions EXT4
 if mount | grep "$USB_MOUNT" > /dev/null; then
-    echo "Configuration permissions USB..."
-
     chown -R $USER_NAME:$USER_NAME $USB_MOUNT
     chmod -R 755 $USB_MOUNT
 
@@ -173,8 +169,6 @@ if mount | grep "$USB_MOUNT" > /dev/null; then
     else
         echo "❌ Écriture KO"
     fi
-else
-    echo "⚠ USB non montée → fallback local"
 fi
 
 # ==========================
@@ -186,7 +180,7 @@ echo "Test Python..."
 sudo -u $USER_NAME $INSTALL_DIR/venv/bin/python -c "import gpiozero; print('GPIO OK')"
 
 # ==========================
-# === SYSTEMD (UPDATED)
+# === SYSTEMD (API MODE)
 # ==========================
 
 echo "Installation service systemd..."
@@ -195,7 +189,7 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
 cat > $SERVICE_FILE <<EOF
 [Unit]
-Description=Smart Heating Thermostat
+Description=Smart Heating API (FastAPI + Controller)
 After=network.target
 
 [Service]
@@ -203,18 +197,18 @@ User=$USER_NAME
 Group=$USER_NAME
 WorkingDirectory=$INSTALL_DIR
 
-ExecStart=$INSTALL_DIR/venv/bin/python -m backend.core.app_controller
+ExecStart=$INSTALL_DIR/venv/bin/uvicorn backend.api.api_server:app --host 0.0.0.0 --port 8000
 
 Restart=always
 RestartSec=5
-
-StandardOutput=journal
-StandardError=journal
 
 EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
 Environment=GPIOZERO_PIN_FACTORY=lgpio
 Environment=PYTHONPATH=$INSTALL_DIR
+
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -233,10 +227,10 @@ systemctl restart $SERVICE_NAME
 sleep 3
 
 if systemctl is-active --quiet $SERVICE_NAME; then
-    echo "✅ Service actif"
+    echo "✅ Service actif (API disponible)"
 else
     echo "❌ Service en échec"
-    journalctl -u $SERVICE_NAME -n 20
+    journalctl -u $SERVICE_NAME -n 50
 fi
 
 # ==========================
@@ -245,11 +239,19 @@ fi
 
 echo ""
 echo "======================================"
-echo "✅ Installation terminée"
+echo "✅ Installation terminée (MODE API)"
 echo "======================================"
 
 echo ""
+echo "🌐 Accès API :"
+echo "http://<IP_RASPBERRY>:8000/docs"
+
+echo ""
 echo "⚠ IMPORTANT :"
-echo "- USB : lsblk / mount | grep usb_backup"
-echo "- Dropbox : config dans $ENV_FILE"
-echo "- Service utilise AppController (nouvelle architecture)"
+echo "- Modifier TOKEN : $ENV_FILE"
+echo "- Vérifier USB : lsblk / mount"
+
+echo ""
+echo "Commandes utiles :"
+echo " systemctl status $SERVICE_NAME"
+echo " journalctl -u $SERVICE_NAME -f"
