@@ -125,12 +125,11 @@ chown $USER_NAME:$USER_NAME $ENV_FILE
 chmod 600 $ENV_FILE
 
 # ==========================
-# === USB MANAGEMENT (FIX)
+# === USB MANAGEMENT (FIX PRO)
 # ==========================
 
 echo "Configuration USB..."
 
-# 1️⃣ Nettoyage double montage
 MOUNT_COUNT=$(mount | grep "$USB_MOUNT" | wc -l)
 
 if [ "$MOUNT_COUNT" -gt 1 ]; then
@@ -140,39 +139,30 @@ if [ "$MOUNT_COUNT" -gt 1 ]; then
     done
 fi
 
-# 2️⃣ Détection device USB fiable
 echo "Détection périphérique USB..."
 
 USB_DEVICE=""
 
-# Cas standard Raspberry
 if [ -e "/dev/sda1" ]; then
     USB_DEVICE="/dev/sda1"
 else
-    # fallback intelligent
     USB_DEVICE=$(lsblk -rpno NAME,TYPE,TRAN | grep "part usb" | awk '{print $1}' | head -n 1)
 fi
 
 if [ -z "$USB_DEVICE" ]; then
-    echo "❌ Aucun périphérique USB détecté"
+    echo "⚠ Aucun périphérique USB détecté"
 else
     echo "USB détectée : $USB_DEVICE"
 fi
 
-# 3️⃣ Montage si nécessaire
 if ! mount | grep "$USB_MOUNT" > /dev/null && [ -n "$USB_DEVICE" ]; then
     echo "Montage $USB_DEVICE → $USB_MOUNT"
 
-    if mount $USB_DEVICE $USB_MOUNT; then
-        echo "✅ Montage réussi"
-    else
-        echo "❌ Échec montage"
-    fi
+    mount $USB_DEVICE $USB_MOUNT || echo "❌ Échec montage"
 fi
 
-# 4️⃣ Permissions EXT4
 if mount | grep "$USB_MOUNT" > /dev/null; then
-    echo "Configuration permissions..."
+    echo "Configuration permissions USB..."
 
     chown -R $USER_NAME:$USER_NAME $USB_MOUNT
     chmod -R 755 $USB_MOUNT
@@ -196,10 +186,10 @@ echo "Test Python..."
 sudo -u $USER_NAME $INSTALL_DIR/venv/bin/python -c "import gpiozero; print('GPIO OK')"
 
 # ==========================
-# === SYSTEMD
+# === SYSTEMD (UPDATED)
 # ==========================
 
-echo "Installation service..."
+echo "Installation service systemd..."
 
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
@@ -213,7 +203,7 @@ User=$USER_NAME
 Group=$USER_NAME
 WorkingDirectory=$INSTALL_DIR
 
-ExecStart=$INSTALL_DIR/venv/bin/python -m backend.core.thermostat
+ExecStart=$INSTALL_DIR/venv/bin/python -m backend.core.app_controller
 
 Restart=always
 RestartSec=5
@@ -224,6 +214,7 @@ StandardError=journal
 EnvironmentFile=$ENV_FILE
 Environment=PYTHONUNBUFFERED=1
 Environment=GPIOZERO_PIN_FACTORY=lgpio
+Environment=PYTHONPATH=$INSTALL_DIR
 
 [Install]
 WantedBy=multi-user.target
@@ -259,6 +250,6 @@ echo "======================================"
 
 echo ""
 echo "⚠ IMPORTANT :"
-echo "- Vérifier la clé USB : lsblk"
-echo "- Vérifier montage : mount | grep usb_backup"
-echo "- Config Dropbox dans : $ENV_FILE"
+echo "- USB : lsblk / mount | grep usb_backup"
+echo "- Dropbox : config dans $ENV_FILE"
+echo "- Service utilise AppController (nouvelle architecture)"
