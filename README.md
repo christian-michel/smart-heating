@@ -25,28 +25,6 @@ It is built around a **separation of concerns architecture**:
 
 ## ⚙️ Key Features
 
-✅ Automatic heating control  
-✅ Manual override via button  
-✅ Robust GPIO handling (lgpio)  
-✅ Data logging (CSV)  
-✅ Smart storage management:
-- 🥇 USB (priority)
-- 🥈 Dropbox
-- 🥉 Local fallback
-
-✅ Automatic synchronization:
-- Local → USB
-- Local → Dropbox
-- USB → Dropbox
-
-✅ systemd service (auto start on boot)  
-✅ Fully automated installation  
-
-
----
-
-## ⚙️ Key Features
-
 ### 🔥 Thermostat
 - Automatic heating regulation
 - Manual / Auto mode switching
@@ -107,11 +85,11 @@ smart-heating/
 │ │ ├── dependencies.py         # 🔐 Auth (Bearer token)
 │ │ │
 │ │ └── routes/
-│ │ ├── status.py               # System status
-│ │ ├── heating.py              # Heating control
-│ │ ├── mode.py                 # Manual / Auto mode
-│ │ ├── system.py               # Start / Stop / Restart
-│ │ └── ui.py                   # Web UI (mobile interface)
+│ │ ├─── status.py              # System status
+│ │ ├─── heating.py             # Heating control
+│ │ ├─── mode.py                # Manual / Auto mode
+│ │ ├─── system.py              # Start / Stop / Restart
+│ │ └─── ui.py                  # Web UI (mobile interface)
 │
 ├── install/
 │ ├── install.sh
@@ -172,42 +150,38 @@ Token defined in environment variable :
 API_TOKEN=your_secret_token
 ```
 
----
 
-### 📡 Main endpoints
+
+#### 📡 Main endpoints
 📊 System status
 ```http
 GET /status
 ```
 
----
 
-### 🔥 Heating control
+#### 🔥 Heating control
 ```http
 POST /heating/on
 POST /heating/off
 ```
 
----
 
-### 🎛 Mode control
+#### 🎛 Mode control
 ```http
 POST /mode/manual
 POST /mode/auto
 ```
 
----
 
-### 🔄 System control
+#### 🔄 System control
 ```http
 POST /restart
 POST /start
 POST /stop
 ```
 
----
 
-### 📱 Web UI (Mobile Interface)
+#### 📱 Web UI (Mobile Interface)
 
 Accessible via:
 ```
@@ -398,7 +372,7 @@ journalctl -u smart-heating -f
 
 ---
 
-## 🧪 To do post-install
+## 🧪 To do - in a script
 ```bash
 #!/bin/bash
 
