@@ -3,11 +3,11 @@ app_controller.py
 
 Contrôleur central du système Smart Heating.
 
-Version PRO :
+Version PRO++ :
+- Source UNIQUE de vérité (state centralisé)
 - Thread-safe
-- Compatible FastAPI
-- Gestion propre du cycle de vie
-- Accès externe sécurisé (API)
+- Compatible API
+- Synchronisation Thermostat → Controller
 """
 
 import time
@@ -19,9 +19,6 @@ from backend.core.thermostat import Thermostat
 
 
 class AppController:
-    """
-    Contrôleur principal du système Smart Heating.
-    """
 
     def __init__(self):
         self.thermostat = None
@@ -29,10 +26,18 @@ class AppController:
         self.thread = None
         self.lock = threading.Lock()
 
+        # 🔥 STATE CENTRAL (clé du fix)
+        self.state = {
+            "running": False,
+            "temperature": None,
+            "heating": False,
+            "manual_mode": False
+        }
+
         print("[AppController] Initialisé")
 
     # ==========================
-    # === START SYSTEM
+    # === START
     # ==========================
     def start(self):
         with self.lock:
@@ -44,6 +49,7 @@ class AppController:
 
             self.thermostat = Thermostat()
             self.running = True
+            self.state["running"] = True
 
             self.thread = threading.Thread(
                 target=self._run_loop,
@@ -54,7 +60,7 @@ class AppController:
             print("[AppController] Démarré")
 
     # ==========================
-    # === MAIN LOOP
+    # === LOOP
     # ==========================
     def _run_loop(self):
         try:
@@ -62,6 +68,7 @@ class AppController:
                 try:
                     if self.thermostat:
                         self.thermostat.update()
+                        self._sync_state()
                 except Exception as e:
                     print(f"[AppController] Erreur update : {e}")
 
@@ -72,7 +79,36 @@ class AppController:
             self.stop()
 
     # ==========================
-    # === STOP SYSTEM
+    # === SYNC STATE (CRITIQUE)
+    # ==========================
+    def _sync_state(self):
+        """
+        Synchronise Thermostat → AppController
+        """
+        try:
+            temperature = self.thermostat.sensor.get_temperature()
+        except Exception:
+            temperature = None
+
+        try:
+            heating = self.thermostat.heating.state
+        except Exception:
+            heating = False
+
+        try:
+            manual_mode = self.thermostat.manual_mode
+        except Exception:
+            manual_mode = False
+
+        # 🔥 mise à jour centralisée
+        self.state.update({
+            "temperature": temperature,
+            "heating": heating,
+            "manual_mode": manual_mode
+        })
+
+    # ==========================
+    # === STOP
     # ==========================
     def stop(self):
         with self.lock:
@@ -82,6 +118,7 @@ class AppController:
             print("[AppController] Arrêt...")
 
             self.running = False
+            self.state["running"] = False
 
             try:
                 if self.thermostat:
@@ -103,32 +140,14 @@ class AppController:
         self.start()
 
     # ==========================
-    # === STATUS (API READY)
+    # === STATUS
     # ==========================
     def get_status(self):
         with self.lock:
-            if not self.thermostat:
-                return {
-                    "running": False,
-                    "temperature": None,
-                    "heating": False,
-                    "manual_mode": False
-                }
-
-            try:
-                temperature = self.thermostat.sensor.get_temperature()
-            except Exception:
-                temperature = None
-
-            return {
-                "running": self.running,
-                "temperature": temperature,
-                "heating": self.thermostat.heating.state,
-                "manual_mode": self.thermostat.manual_mode
-            }
+            return dict(self.state)
 
     # ==========================
-    # === API CONTROL METHODS
+    # === CONTROL API
     # ==========================
     def set_manual_mode(self, enabled: bool):
         with self.lock:
@@ -136,7 +155,12 @@ class AppController:
                 return False
 
             print(f"[AppController] Mode manuel → {enabled}")
+
             self.thermostat.manual_mode = enabled
+
+            # 🔥 IMPORTANT : sync immédiat
+            self.state["manual_mode"] = enabled
+
             return True
 
     def force_heating(self, enabled: bool):
@@ -151,20 +175,25 @@ class AppController:
                     self.thermostat.heating.turn_on()
                 else:
                     self.thermostat.heating.turn_off()
+
+                # 🔥 sync immédiat
+                self.state["heating"] = enabled
+
                 return True
+
             except Exception as e:
                 print(f"[AppController] Erreur chauffage : {e}")
                 return False
 
     # ==========================
-    # === CLEANUP GLOBAL
+    # === CLEANUP
     # ==========================
     def cleanup(self):
         print("[AppController] Cleanup global")
         self.stop()
 
     # ==========================
-    # === SIGNAL HANDLING
+    # === SIGNALS
     # ==========================
     def register_signals(self):
         def handler(sig, frame):
