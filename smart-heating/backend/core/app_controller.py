@@ -1,13 +1,14 @@
 """
 app_controller.py
 
-Contrôleur central du système Smart Heating.
+Contrôleur central Smart Heating
 
-Version PRO++ :
-- Source UNIQUE de vérité (state centralisé)
+Version PRO++++ :
+- State centralisé complet
 - Thread-safe
-- Compatible API
-- Synchronisation Thermostat → Controller
+- API-ready
+- Sync bidirectionnelle Controller ↔ Thermostat
+- Support consigne dynamique (target_temperature)
 """
 
 import time
@@ -26,12 +27,13 @@ class AppController:
         self.thread = None
         self.lock = threading.Lock()
 
-        # 🔥 STATE CENTRAL (clé du fix)
+        # 🔥 STATE CENTRAL (source de vérité)
         self.state = {
             "running": False,
             "temperature": None,
             "heating": False,
-            "manual_mode": False
+            "manual_mode": False,
+            "target_temperature": 19.0 # valeur par défaut
         }
 
         print("[AppController] Initialisé")
@@ -48,6 +50,10 @@ class AppController:
             print("[AppController] Démarrage...")
 
             self.thermostat = Thermostat()
+
+            # 🔥 Injection consigne initiale
+            self.thermostat.target_temperature = self.state["target_temperature"]
+
             self.running = True
             self.state["running"] = True
 
@@ -67,8 +73,14 @@ class AppController:
             while self.running:
                 try:
                     if self.thermostat:
+                        # 🔥 sync Controller → Thermostat (IMPORTANT)
+                        self.thermostat.target_temperature = self.state.get(
+                            "target_temperature", 19.0
+                        )
+
                         self.thermostat.update()
                         self._sync_state()
+
                 except Exception as e:
                     print(f"[AppController] Erreur update : {e}")
 
@@ -79,12 +91,9 @@ class AppController:
             self.stop()
 
     # ==========================
-    # === SYNC STATE (CRITIQUE)
+    # === SYNC STATE (Thermostat → Controller)
     # ==========================
     def _sync_state(self):
-        """
-        Synchronise Thermostat → AppController
-        """
         try:
             temperature = self.thermostat.sensor.get_temperature()
         except Exception:
@@ -100,11 +109,16 @@ class AppController:
         except Exception:
             manual_mode = False
 
-        # 🔥 mise à jour centralisée
+        try:
+            target_temperature = self.thermostat.target_temperature
+        except Exception:
+            target_temperature = self.state["target_temperature"]
+
         self.state.update({
             "temperature": temperature,
             "heating": heating,
-            "manual_mode": manual_mode
+            "manual_mode": manual_mode,
+            "target_temperature": target_temperature
         })
 
     # ==========================
@@ -157,8 +171,6 @@ class AppController:
             print(f"[AppController] Mode manuel → {enabled}")
 
             self.thermostat.manual_mode = enabled
-
-            # 🔥 IMPORTANT : sync immédiat
             self.state["manual_mode"] = enabled
 
             return True
@@ -176,14 +188,35 @@ class AppController:
                 else:
                     self.thermostat.heating.turn_off()
 
-                # 🔥 sync immédiat
                 self.state["heating"] = enabled
-
                 return True
 
             except Exception as e:
                 print(f"[AppController] Erreur chauffage : {e}")
                 return False
+
+    # ==========================
+    # === TARGET TEMPERATURE API
+    # ==========================
+    def set_target_temperature(self, value: float):
+        with self.lock:
+            print(f"[AppController] Nouvelle consigne → {value}°C")
+
+            try:
+                self.state["target_temperature"] = value
+
+                # 🔥 mise à jour immédiate thermostat
+                if self.thermostat:
+                    self.thermostat.target_temperature = value
+
+                return True
+
+            except Exception as e:
+                print(f"[AppController] Erreur consigne : {e}")
+                return False
+
+    def get_target_temperature(self):
+        return self.state.get("target_temperature", 19.0)
 
     # ==========================
     # === CLEANUP

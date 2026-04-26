@@ -1,23 +1,16 @@
 """
 thermostat.py
-
-Responsabilité :
-- Piloter le chauffage en fonction de la température
-- Gérer le mode manuel via bouton GPIO
-- Logger les données
-- Assurer un arrêt propre du système
-
-Robustesse :
-- Compatible sans GPIO (mode simulation)
-- Correction problème pin_factory (gpiozero)
-- Protection contre concurrence (threading.Lock)
+Version PRO+++ :
+- Consigne dynamique (API)
+- Hystérésis propre
+- Anti court-cycle (protection matériel)
 """
 
 import time
 import threading
 
 # ==========================
-# === GPIO CONFIGURATION (FIX CRITIQUE)
+# === GPIO CONFIGURATION
 # ==========================
 
 try:
@@ -31,16 +24,15 @@ try:
     GPIO_AVAILABLE = True
 
 except Exception as e:
-    print(f"[Thermostat] GPIO indisponible → mode simulation : {e}")
+    print(f"[Thermostat] GPIO indisponible → simulation : {e}")
     GPIO_AVAILABLE = False
     Button = None
 
 # ==========================
-# === IMPORTS BACKEND
+# === IMPORTS
 # ==========================
 
 from backend.config import (
-    TEMPERATURE_TARGET,
     TEMPERATURE_TOLERANCE,
     LOG_INTERVAL_SECONDS,
     SWITCH_GPIO
@@ -52,18 +44,8 @@ from backend.services.logger_service import LoggerService
 
 
 class Thermostat:
-    """
-    Thermostat principal.
-
-    Gère :
-    - température
-    - chauffage
-    - bouton
-    - logging
-    """
 
     def __init__(self):
-        # Stabilisation système (boot Raspberry)
         time.sleep(1)
 
         self.sensor = TemperatureSensor()
@@ -73,7 +55,13 @@ class Thermostat:
         self.last_log_time = 0
         self.manual_mode = False
 
-        # 🔒 Protection concurrence
+        # 🔥 Consigne dynamique (API)
+        self.target_temperature = 19.0
+
+        # 🔥 Anti court-cycle
+        self.last_switch_time = 0
+        self.min_cycle_time = 60 # secondes (à ajuster)
+
         self.lock = threading.Lock()
 
         # ==========================
@@ -87,24 +75,80 @@ class Thermostat:
                 self.button.when_pressed = self.toggle_mode
                 print(f"[Thermostat] Bouton GPIO actif (pin={SWITCH_GPIO})")
             except Exception as e:
-                print(f"[Thermostat] Erreur bouton → désactivé : {e}")
+                print(f"[Thermostat] Bouton désactivé : {e}")
         else:
-            print("[Thermostat] Mode simulation → pas de bouton")
+            print("[Thermostat] Mode simulation")
 
     # ==========================
-    # === CALLBACK BOUTON
+    # === BOUTON
     # ==========================
 
     def toggle_mode(self):
-        """
-        Callback bouton (thread gpiozero)
-        """
         with self.lock:
             self.manual_mode = not self.manual_mode
-            print("\n>>> TOGGLE chauffage :", "ON" if self.manual_mode else "AUTO")
+            print(">>> MODE :", "MANUEL" if self.manual_mode else "AUTO")
 
     # ==========================
-    # === BOUCLE PRINCIPALE
+    # === ANTI COURT-CYCLE
+    # ==========================
+
+    def can_switch(self):
+        """
+        Vérifie si on peut changer l'état du chauffage
+        """
+        elapsed = time.time() - self.last_switch_time
+        return elapsed >= self.min_cycle_time
+
+    def record_switch(self):
+        """
+        Enregistre un changement d'état
+        """
+        self.last_switch_time = time.time()
+
+    # ==========================
+    # === RÉGULATION
+    # ==========================
+
+    def regulate(self, temperature):
+        target = self.target_temperature
+        tolerance = TEMPERATURE_TOLERANCE
+
+        if temperature is None:
+            print("Température invalide → OFF sécurité")
+            self.heating.turn_off()
+            return
+
+        # 🔥 MODE MANUEL PRIORITAIRE
+        if self.manual_mode:
+            if not self.heating.state and self.can_switch():
+                print("[Thermostat] MANUAL → ON")
+                self.heating.turn_on()
+                self.record_switch()
+            return
+
+        # 🤖 MODE AUTO
+        if not self.heating.state:
+            # Demande ON
+            if temperature < (target - tolerance):
+                if self.can_switch():
+                    print(f"[Thermostat] ON (temp={temperature:.2f})")
+                    self.heating.turn_on()
+                    self.record_switch()
+                else:
+                    print("[Thermostat] ON bloqué (anti short-cycle)")
+
+        else:
+            # Demande OFF
+            if temperature > (target + tolerance):
+                if self.can_switch():
+                    print(f"[Thermostat] OFF (temp={temperature:.2f})")
+                    self.heating.turn_off()
+                    self.record_switch()
+                else:
+                    print("[Thermostat] OFF bloqué (anti short-cycle)")
+
+    # ==========================
+    # === LOOP
     # ==========================
 
     def update(self):
@@ -113,35 +157,10 @@ class Thermostat:
                 temperature = self.sensor.get_temperature()
 
                 print(f"Température : {temperature} °C")
-                print(f"Mode : {'MANUEL (FORCÉ ON)' if self.manual_mode else 'AUTO'}")
+                print(f"Target : {self.target_temperature} °C")
+                print(f"Mode : {'MANUEL' if self.manual_mode else 'AUTO'}")
 
-                # ==========================
-                # === LOGIQUE CHAUFFAGE
-                # ==========================
-
-                # 🔥 MODE MANUEL PRIORITAIRE
-                if self.manual_mode:
-                    self.heating.turn_on()
-
-                # 🤖 MODE AUTOMATIQUE
-                else:
-                    if temperature is not None:
-
-                        if (
-                            not self.heating.state
-                            and temperature < (TEMPERATURE_TARGET - TEMPERATURE_TOLERANCE)
-                        ):
-                            self.heating.turn_on()
-
-                        elif (
-                            self.heating.state
-                            and temperature > (TEMPERATURE_TARGET + TEMPERATURE_TOLERANCE)
-                        ):
-                            self.heating.turn_off()
-
-                    else:
-                        print("Température invalide → OFF sécurité")
-                        self.heating.turn_off()
+                self.regulate(temperature)
 
             # ==========================
             # === LOGGING
@@ -176,30 +195,23 @@ class Thermostat:
         except Exception:
             pass
 
-        # Flush logger
         try:
             self.logger.close()
-            print("Logger flush final exécuté.")
-        except Exception as e:
-            print(f"Erreur flush Logger : {e}")
+        except Exception:
+            pass
 
-        # Sync finale
         try:
             if self.logger.storage_manager:
-                print("Flush global des stockages...")
                 self.logger.storage_manager.flush_all()
-                print("Synchronisation finale effectuée.")
-        except Exception as e:
-            print(f"Erreur synchronisation finale : {e}")
+        except Exception:
+            pass
 
 
 # ==========================
-# === TEST AUTONOME
+# === TEST
 # ==========================
 
 if __name__ == "__main__":
-    print("=== Test thermostat (version robuste) ===")
-
     thermostat = Thermostat()
 
     try:
@@ -208,7 +220,4 @@ if __name__ == "__main__":
             time.sleep(0.1)
 
     except KeyboardInterrupt:
-        print("\nArrêt manuel.")
-
-    finally:
         thermostat.cleanup()
