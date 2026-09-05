@@ -1,354 +1,218 @@
 # 🔥 Smart Heating System
 
-> IoT thermostat system for Raspberry Pi with **automatic storage management (USB / Dropbox / Local)** and **robust systemd deployment**
+> IoT thermostat system for Raspberry Pi with **automatic storage management (USB / Dropbox / Local)**, a **mobile-friendly web UI**, and two deployment modes: **bare-metal (systemd)** or **Docker**.
 
 ---
 
 ## 📌 Overview
 
-Smart Heating is a **production-ready thermostat system** designed for Raspberry Pi.
+Smart Heating is a thermostat system designed for a Raspberry Pi (3 or later). It controls a heating system using:
 
-It controls a heating system using:
-- 🌡 Temperature sensor (DS18B20)
-- 🔘 Physical button (manual mode)
-- 💡 GPIO-controlled relay (via LED simulation)
+- 🌡 A DS18B20 temperature sensor (1-Wire)
+- 🔘 A physical button for manual mode
+- 🔌 A GPIO-controlled relay
 
-It is built around a **separation of concerns architecture**:
+It's built around a separation-of-concerns architecture:
 
-- 🧠 Core system → `AppController`
-- 🌡 Thermostat logic → sensor + heating control
-- 💾 Storage system → USB / Dropbox / Local fallback
-- 🌐 API layer → FastAPI (smartphone / remote control)
-- 🖥 Web UI → lightweight interface (mobile-first)
+- 🧠 **Core orchestrator** → `AppController` (thread-safe, owns the regulation loop)
+- 🌡 **Thermostat logic** → sensor reading + hysteresis + anti-short-cycle protection
+- 💾 **Storage system** → USB → Dropbox → local fallback, in that priority order
+- 🌐 **API layer** → FastAPI, Bearer-token authenticated
+- 🖥 **Web UI** → self-contained mobile page served directly by the API (no separate frontend build)
 
 ---
 
 ## ⚙️ Key Features
 
 ### 🔥 Thermostat
-- Automatic heating regulation
-- Manual / Auto mode switching
-- Real-time temperature monitoring
+- Automatic heating regulation with configurable tolerance
+- Manual / Auto mode switching (button or API)
+- **Anti-short-cycle protection** on the relay — enforced identically whether the switch is triggered by the automatic regulation loop *or* by an API call, so the hardware can't be hammered by rapid remote toggling
+- Real-time temperature monitoring with sensor CRC validation and fallback to the last known-good reading
 
 ### 🧠 System architecture
-- Central `AppController` (thread-safe orchestration)
-- Safe lifecycle management (start / stop / restart)
-- systemd integration (auto boot)
+- Central `AppController` (thread-safe orchestration, single lock discipline across the background loop and API-triggered actions)
+- Safe lifecycle management (start / stop / restart), exposed both via systemd and via the API
+- Fails loudly rather than silently: if GPIO access can't be established, the app refuses to run in a "simulation" state without saying so (see [Docker deployment](docs/DOCKER.md) for how this is enforced in containers)
 
-### 💾 Data logging
-- CSV-based logging system
-- Buffer-based writing (performance safe)
-- Session-based file creation
-
-### 📦 Storage management
-Priority system:
-1. 🥇 USB storage (`/mnt/usb_backup`)
-2. 🥈 Dropbox sync
-3. 🥉 Local fallback storage
-
-### 🔄 Synchronization
-- Automatic flush on USB mount
-- Periodic sync to Dropbox
-- Safe shutdown flush (critical)
+### 💾 Data logging & storage
+- CSV-based logging, buffered writes
+- Storage priority: 🥇 USB (`/mnt/usb_backup`) → 🥈 Dropbox → 🥉 local fallback (`/opt/smart-heating/data`)
+- Automatic sync on USB mount, periodic sync to Dropbox, flush on shutdown
 
 ### 🌐 Remote control API (FastAPI)
-- Secure token-based authentication
-- Full system control via HTTP
-- Mobile-ready endpoints
+- Bearer-token authentication on every endpoint
+- Full system control over HTTP (heating, mode, target temperature, start/stop/restart)
+- Configurable CORS, so a browser-based client on another origin can reach it
+- See [docs/API.md](docs/API.md) for the full reference
+
+### 📱 Web UI
+- A single self-contained page (`backend/api/routes/ui.py`), no build step, no external CDN — served directly by the API at `http://<raspberry-ip>:8000/`
+- Circular gauge for the target temperature, live chart (built from polled readings), Auto/Manual toggle, manual heating override, and a collapsible system panel (start/stop/restart, hardware info)
+- The API token is entered once and kept in the phone's browser storage — no server-side session needed
+- Works from any device on the same network; add it to your phone's home screen for an app-like shortcut
 
 ---
 
 ## 🧱 Project Structure
 
 ```
-
 smart-heating/
-│
 ├── backend/
-│ ├── core/
-│ │ ├── app_controller.py       # 🧠 Main system orchestrator
-│ │ ├── thermostat.py           # 🔥 Thermostat logic
-│ │ ├── heating.py              # GPIO relay control
-│ │ ├── sensor.py               # Temperature sensor
-│ │
-│ ├── services/
-│ │ ├── logger_service.py       # 📊 CSV logging engine
-│ │ ├── storage_manager.py      # 💾 Storage routing logic
-│ │ └── storage/
-│ │ ├── usb_storage.py
-│ │ ├── dropbox_storage.py
-│ │ └── local_storage.py
-│
-│ ├── api/
-│ │ ├── api_server.py           # 🚀 FastAPI entrypoint
-│ │ ├── controller.py           # Singleton AppController wrapper
-│ │ ├── dependencies.py         # 🔐 Auth (Bearer token)
-│ │ │
-│ │ └── routes/
-│ │ ├─── status.py              # System status
-│ │ ├─── heating.py             # Heating control
-│ │ ├─── mode.py                # Manual / Auto mode
-│ │ ├─── system.py              # Start / Stop / Restart
-│ │ └─── ui.py                  # Web UI (mobile interface)
-│
+│   ├── config.py                 # GPIO pins, sensor ID, tolerances, storage paths
+│   ├── main.py                   # Standalone entrypoint (not used by the API/Docker path)
+│   ├── core/
+│   │   ├── app_controller.py     # 🧠 Main orchestrator (thread-safe)
+│   │   ├── thermostat.py         # 🔥 Regulation logic, hysteresis, anti-short-cycle
+│   │   ├── heating.py            # GPIO relay control (LED-based)
+│   │   ├── switch.py             # Physical button (manual mode)
+│   │   └── temperature.py        # DS18B20 sensor reader (CRC + fallback)
+│   ├── services/
+│   │   ├── logger_service.py     # 📊 CSV logging engine
+│   │   ├── storage_manager.py    # 💾 Storage routing logic
+│   │   └── storage/
+│   │       ├── usb_storage.py
+│   │       ├── dropbox_storage.py
+│   │       └── local_storage.py
+│   ├── api/
+│   │   ├── api_server.py         # 🚀 FastAPI entrypoint + CORS
+│   │   ├── controller.py         # Singleton AppController wrapper
+│   │   ├── dependencies.py       # 🔐 Bearer-token auth
+│   │   └── routes/
+│   │       ├── status.py         # GET /status
+│   │       ├── heating.py        # POST /heating/{state}
+│   │       ├── mode.py           # POST /manual/{state}
+│   │       ├── temperature.py    # GET/POST /temperature/target
+│   │       ├── system.py         # POST /start /stop /restart
+│   │       └── ui.py             # GET / — mobile web UI
+│   └── tests/                    # pytest unit tests
+├── docker/
+│   ├── Dockerfile                # Builds liblgpio from source, non-root user
+│   └── entrypoint.sh             # Fails loudly if real GPIO access isn't available
+├── docker-compose.yml            # GPIO device, 1-Wire mount, USB mount, restart policy
 ├── install/
-│ ├── install.sh
-│ ├── uninstall.sh
-│ └── setup_dependencies.sh
-│
-├── data/ # Local fallback storage
-└── README.md
-
+│   ├── install.sh                # Bare-metal install (venv + systemd)
+│   ├── install_docker.sh         # Docker install (idempotent, safe to re-run)
+│   ├── uninstall.sh
+│   └── setup_dependencies.sh
+├── data/                         # Local fallback storage (bare-metal path)
+├── dependencies_apt.txt
+├── requirements.txt
+└── docs/
+    ├── API.md                    # Full endpoint reference
+    ├── DOCKER.md                 # Docker deployment guide + troubleshooting log
+    └── SECURITY.md               # Threat model, hardening notes, what's NOT covered
 ```
-
----
-
-## 🧠 System Architecture
-
-### 🔥 Core Principle
-
-The system is driven by a **single orchestrator**:
-
-```python
-AppController
-
-```
-
-It manages:
-
-* Thermostat lifecycle
-* Thread execution
-* Safe shutdown
-* API interactions
-
----
-
-### 🌡 Heating Logic
-#### Auto mode:
-
-```
-if temperature < target - threshold → heating ON
-if temperature > target + threshold → heating OFF
-```
-
-#### Manual mode:
-Heating is forced ON or OFF via API or button
-
----
-
-### 🌐 API (FastAPI)
-
-#### 🔐 Authentication
-
-All endpoints are protected :
-
-```http
-Authorization: Bearer <API_TOKEN>
-```
-Token defined in environment variable :
-```bash
-API_TOKEN=your_secret_token
-```
-
-
-
-#### 📡 Main endpoints
-📊 System status
-```http
-GET /status
-```
-
-
-#### 🔥 Heating control
-```http
-POST /heating/on
-POST /heating/off
-```
-
-
-#### 🎛 Mode control
-```http
-POST /mode/manual
-POST /mode/auto
-```
-
-
-#### 🔄 System control
-```http
-POST /restart
-POST /start
-POST /stop
-```
-
-
-#### 📱 Web UI (Mobile Interface)
-
-Accessible via:
-```
-http://RASPBERRY_IP:8000
-```
-Features:
-
-* Temperature display
-* Heating ON/OFF control
-* Mode switch (Auto / Manual)
-* System status view
 
 ---
 
 ## 🧠 How It Works
 
-### 🔥 Heating Logic
+### Auto mode
+```
+if temperature < target - tolerance → heating ON
+if temperature > target + tolerance → heating OFF
+```
+Both transitions are gated by the anti-short-cycle protection (default: 60s minimum between switches).
 
-- Manual mode ON → heating forced ON
-- Manual mode OFF → thermostat mode:
+### Manual mode
+Heating is forced ON or OFF via the API or the physical button, still subject to the same anti-short-cycle protection — a rapid sequence of API calls can't bypass it.
 
+---
+
+## 🚀 Installation
+
+Two ways to run this project. Docker is recommended for anyone who wants the app isolated from Raspberry Pi OS package updates and automatic recovery after a power outage; bare-metal is simpler to inspect/debug directly.
+
+### Option A — Docker (recommended)
+
+```bash
+sudo ./install/install_docker.sh
 ```
 
-if temp < target - tolerance → ON
-if temp > target + tolerance → OFF
+This installs Docker + Compose if needed, builds the image (compiling `liblgpio` from source — see [docs/DOCKER.md](docs/DOCKER.md) for why), detects your host's `gpio` group, wires up the GPIO device and 1-Wire sensor into the container without `--privileged`, and starts it with `restart: unless-stopped` so it survives reboots and power cuts.
 
-````
+The script is **idempotent** — re-run it any time after pulling code changes; it never touches `data/` or `.env`.
 
----
+Useful commands:
+```bash
+cd /opt/smart-heating
+sudo docker compose ps          # check it's "Up", not "Restarting"
+sudo docker compose logs -f     # watch it live — look for [entrypoint] OK
+sudo docker compose restart     # after an .env change
+sudo docker compose build && sudo docker compose up -d   # after a code change
+```
 
-### 💾 Storage Strategy
+If the container keeps restarting, `docker compose logs` will show a `[entrypoint]` line explaining exactly what's blocking (device, permissions, GPIO_GID) instead of silently falling back to a non-functional simulation mode. See [docs/DOCKER.md](docs/DOCKER.md) for the full list of pitfalls we hit building this (Debian package naming, `liblgpio-dev` availability, working-directory permissions) and how they're handled.
 
-Priority order:
-
-1. **USB (/mnt/usb_backup)**
-2. **Dropbox**
-3. **Local (/opt/smart-heating/data)**
-
----
-
-### 🔄 Synchronization Rules
-
-| Source | Destination | When |
-|------|--------|------|
-| Local | USB | once when USB appears |
-| Local | Dropbox | once |
-| USB | Dropbox | every 60s |
-
----
-
-## 🧰 Installation
-
-### 📦 Run installer
+### Option B — Bare-metal (venv + systemd)
 
 ```bash
 sudo ./install/install.sh
-````
-
----
-
-### ⚠️ After install
-
-Edit environment file:
-
-```bash
-sudo nano /opt/smart-heating/.env
 ```
 
-Add:
-
-```env
-DROPBOX_APP_KEY=
-DROPBOX_APP_SECRET=
-DROPBOX_REFRESH_TOKEN=
-```
-
-Restart service:
-
+Then edit `/opt/smart-heating/.env` (Dropbox keys, `API_TOKEN`, `CORS_ALLOWED_ORIGINS`) and:
 ```bash
 sudo systemctl restart smart-heating
 ```
 
----
-
-## 🧹 Uninstall
+### Uninstall
 
 ```bash
 sudo ./install/uninstall.sh
 ```
+Removes the service/container and project files. Keeps USB data and CSV files.
 
-✔ Removes:
+---
 
-* service
-* project files
-* user (if safe)
+## 🔐 Configuration (`.env`)
 
-❌ Keeps:
+| Variable | Purpose | Default |
+|---|---|---|
+| `API_TOKEN` | Bearer token required on every API call | `changeme` — **change this** |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call the API from a browser, or `*` for LAN use | `*` |
+| `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET` / `DROPBOX_REFRESH_TOKEN` | Optional Dropbox sync | empty |
+| `GPIO_GID` | (Docker only) host `gpio` group id, auto-detected by `install_docker.sh` | auto |
 
-* USB data
-* CSV files
+See [docs/SECURITY.md](docs/SECURITY.md) for what these settings do and don't protect against.
 
 ---
 
 ## 🔌 Hardware Setup
 
-| Component   | GPIO    |
-| ----------- | ------- |
-| LED / Relay | GPIO 17 |
-| Button      | GPIO 27 |
-| DS18B20     | GPIO 4  |
+| Component | GPIO |
+|---|---|
+| Relay (heating) | GPIO 17 |
+| Manual button | GPIO 27 |
+| DS18B20 (1-Wire) | GPIO 4 |
+
+1-Wire must be enabled at the OS level (`dtoverlay=w1-gpio` in `/boot/firmware/config.txt`) — this is true whether you run bare-metal or in Docker, since it's a kernel/device-tree setting, not something the app or container can configure.
 
 ---
 
-## 💽 USB Configuration (EXT4)
-
-### Recommended setup
+## 💽 USB Configuration
 
 ```bash
 sudo mkfs.ext4 /dev/sda1
 sudo mkdir -p /mnt/usb_backup
-```
-
----
-
-### Manual mount
-
-```bash
 sudo mount /dev/sda1 /mnt/usb_backup
-sudo chown -R smartheating:smartheating /mnt/usb_backup
+sudo chown -R smartheating:smartheating /mnt/usb_backup   # bare-metal
 ```
+`install_docker.sh` detects and mounts a USB key automatically and `chown`s it to the container's uid.
 
 ---
 
 ## ☁️ Dropbox Setup
 
-### 1️⃣ Create App
-
-Go to:
-👉 [https://www.dropbox.com/developers/apps](https://www.dropbox.com/developers/apps)
-
-* Create App
-* Scoped access
-* Full Dropbox
-
----
-
-### 2️⃣ Generate Token
-
-* Enable refresh token
-* Copy:
-
-```
-APP_KEY
-APP_SECRET
-REFRESH_TOKEN
-```
-
----
-
-### 3️⃣ Add to `.env`
+1. Create an app at [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps) (scoped access, full Dropbox).
+2. Enable refresh tokens, copy `APP_KEY` / `APP_SECRET` / `REFRESH_TOKEN`.
+3. Add them to `.env`, then restart the service/container.
 
 ---
 
 ## 📊 Data Logging
 
 CSV format:
-
 ```
 timestamp,temperature,heating,switch
 2026-04-10 12:00:00,21.5,True,False
@@ -358,157 +222,54 @@ timestamp,temperature,heating,switch
 
 ## 🔍 Monitoring
 
-### Service status
-
+**Bare-metal:**
 ```bash
 sudo systemctl status smart-heating
-```
-
-### Logs
-
-```bash
 journalctl -u smart-heating -f
 ```
 
----
-
-## 🧪 To do - in a script
-```bash
-#!/bin/bash
-
-# Au démarrage, juste après l'installation du programme : 
-lsblk
-# exemple de réponse attendue : 
-# NAME        MAJ:MIN RM  SIZE RO TYPE MOUNTPOINTS
-# loop0         7:0    0  905M  0 loop 
-# sda           8:0    1 28,9G  0 disk 
-# └─sda1        8:1    1 28,9G  0 part /mnt/usb_backup
-# mmcblk0     179:0    0 59,5G  0 disk 
-# ├─mmcblk0p1 179:1    0  512M  0 part /boot/firmware
-# └─mmcblk0p2 179:2    0   59G  0 part /
-# zram0       254:0    0  905M  0 disk [SWAP]
-
-
-# Insertion du token Dropbox et de la clé de connexion à l'API
-sudo -u smartheating echo "# Dropbox
-DROPBOX_APP_KEY="your_api_key"
-DROPBOX_APP_SECRET="your_api_secret"
-DROPBOX_REFRESH_TOKEN="your_refresh_token"
-
-# API Token
-API_TOKEN=changeme" > /opt/smart-heating/.env
-
-ls -l /opt/smart-heating/ 
-sudo -u smartheating cat /opt/smart-heating/.env
-
-# Lancer le service
-sudo systemctl daemon-reexec
-sudo systemctl daemon-reload
-sudo systemctl restart smart-heating.service
-
-# Faire les vérifications de base pour s'assurer que tout fonctionne bien : 
-systemctl status smart-heating.service
-# exemple de réponse attendue : 
-# ● smart-heating.service - Smart Heating API (FastAPI + Controller)
-#      Loaded: loaded (/etc/systemd/system/smart-heating.service; enabled; preset: enabled)
-#      Active: active (running) since Sat 2026-04-18 10:15:41 CEST; 7s ago
-#  Invocation: 19f79777bd6e4ebbaf9a16fb2ae98b1a
-#    Main PID: 7272 (uvicorn)
-#       Tasks: 4 (limit: 756)
-#         CPU: 5.036s
-#      CGroup: /system.slice/smart-heating.service
-#              └─7272 /opt/smart-heating/venv/bin/python3 /opt/smart-heating/venv/bin/uvicorn backend.api.api_server:app --host 0.0.0.0 --port 8000
-# 
-# avril 18 10:15:46 maison uvicorn[7272]: [AppController] Démarrage...
-# avril 18 10:15:47 maison uvicorn[7272]: [HeatingSystem] GPIO actif (pin=17)
-# avril 18 10:15:47 maison uvicorn[7272]: [StorageManager] Initialisation...
-# avril 18 10:15:48 maison uvicorn[7272]: ✅ Dropbox connecté avec succès
-# avril 18 10:15:48 maison uvicorn[7272]: [StorageManager] USB disponible ✅
-# avril 18 10:15:48 maison uvicorn[7272]: [StorageManager] STOCKAGE ACTIF → USB
-# avril 18 10:15:48 maison uvicorn[7272]: [StorageManager] Sync local → USB...
-# avril 18 10:15:48 maison uvicorn[7272]: [StorageManager] Sync local → USB OK
-# avril 18 10:15:48 maison uvicorn[7272]: [StorageManager] Sync USB → Dropbox...
-# avril 18 10:15:48 maison uvicorn[7272]: [Dropbox] Sync depuis : /mnt/usb_backup
-
-
-ss -tulnp | grep 8000
-# réponse attendue : 
-# tcp   LISTEN 0      2048         0.0.0.0:8000       0.0.0.0:*  
-
-curl -H "Authorization: Bearer changeme" http://localhost:8000/status
-# exemple de réponse attendue : 
-# {"running":true,"temperature":22.0,"heating":false,"manual_mode":false}
-
-journalctl -u smart-heating.service -f
-```
-
----
-
-## 🧪 Debug Tips
-
-### GPIO test
-
-```bash
-python -c "from gpiozero import LED; LED(17).on()"
-```
-
-### Check USB
-
-```bash
-lsblk
-mount | grep usb_backup
-```
-
----
-
-## 🚀 Run Manually
-
+**Docker:**
 ```bash
 cd /opt/smart-heating
-source venv/bin/activate
-python -m backend.core.thermostat
+sudo docker compose ps
+sudo docker compose logs -f
+```
+
+**Either way**, a quick functional check:
+```bash
+curl -H "Authorization: Bearer <token>" http://localhost:8000/status
+# {"running":true,"temperature":21.5,"heating":false,"manual_mode":false,"target_temperature":19.0}
 ```
 
 ---
 
 ## 🛠 Troubleshooting
 
-### ❌ LED not working
+| Symptom | Likely cause |
+|---|---|
+| Relay never triggers, but the API says `heating: true` | GPIO backend silently in simulation mode — should no longer happen in Docker (the entrypoint refuses to start), but check `docker compose logs` / journal for `[HeatingSystem] GPIO non disponible` |
+| `switch rejected: anti short-cycle protection active` | Expected — the relay changed state less than 60s ago. Wait, or check the tolerance/cycle settings in `config.py` |
+| USB not used | Check `lsblk` / `mount \| grep usb_backup` and ownership |
+| Dropbox not syncing | Check `.env` values, restart the service/container |
+| Docker build fails on `liblgpio-dev` | Expected on a vanilla Debian base image — see [docs/DOCKER.md](docs/DOCKER.md), it's built from source instead |
+| `docker compose` not found after installing `docker.io` | See [docs/DOCKER.md](docs/DOCKER.md) — package naming differs between Debian's own repos and Docker's official repo |
 
-* Check GPIO group
-* Check pin_factory = lgpio
-
----
-
-### ❌ USB not used
-
-* Check mount
-* Check permissions
-
----
-
-### ❌ Dropbox not syncing
-
-* Check `.env`
-* Restart service
+Full deployment troubleshooting log: [docs/DOCKER.md](docs/DOCKER.md).
 
 ---
 
 ## 📈 Future Improvements
 
-* Web dashboard
-* MQTT integration
-* Remote control API
-* OTA updates
+- MQTT integration
+- OTA updates
+- Scheduling / programmable heating periods
 
 ---
 
 ## 👨‍💻 Author
 
-Built with ❤️ for Raspberry Pi IoT automation
-
----
+Built for Raspberry Pi IoT automation.
 
 ## 📄 License
 
-GPL v3 License
+GPL v3 — see [LICENSE](LICENSE).

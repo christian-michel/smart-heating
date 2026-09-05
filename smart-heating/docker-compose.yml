@@ -1,0 +1,74 @@
+# docker-compose.yml — Smart Heating
+#
+# Placé à la racine du projet, à côté de .env, pour que :
+#  - `env_file: .env` charge les secrets (API_TOKEN, Dropbox, CORS) dans
+#    le conteneur ;
+#  - Docker Compose charge automatiquement ce même .env pour résoudre
+#    les ${...} de ce fichier (ex. ${GPIO_GID}), sans double saisie.
+#
+# Accès matériel : pas de `privileged: true`. On ne donne que ce dont
+# gpiozero/lgpio et la sonde 1-Wire ont besoin :
+#  - le device GPIO du Raspberry Pi (relais + bouton manuel)
+#  - le dossier sysfs du bus 1-Wire (sonde DS18B20), en lecture seule
+#  - le point de montage USB et le dossier de stockage local, pour que
+#    les CSV et les sauvegardes survivent à un redémarrage du conteneur
+
+services:
+  smart-heating:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: smart-heating:latest
+    container_name: smart-heating
+
+    # Relance auto par Docker : en cas de crash du process, ou de
+    # redémarrage du Raspberry Pi (dockerd est lancé au boot, et
+    # redémarre tout conteneur marqué unless-stopped/always).
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      # Redondant avec le Dockerfile mais explicite : facilite un
+      # changement de backend GPIO sans reconstruire l'image.
+      GPIOZERO_PIN_FACTORY: lgpio
+      # lgpio écrit ses fichiers de notification (.lgd-nfy<N>) dans le
+      # répertoire de travail courant : /tmp est toujours accessible en
+      # écriture à l'utilisateur non-root du conteneur (voir Dockerfile).
+      LG_WD: /tmp
+
+    ports:
+      - "8000:8000"
+
+    devices:
+      # Contrôleur GPIO du Raspberry Pi 3 (relais GPIO17, bouton GPIO27)
+      - /dev/gpiochip0:/dev/gpiochip0
+
+    group_add:
+      # Le device ci-dessus appartient à root:gpio sur l'hôte (mode 660).
+      # On ajoute le groupe gpio de l'HÔTE au process du conteneur pour
+      # qu'il puisse l'ouvrir sans tourner en root. Le gid réel est
+      # injecté dans .env (clé GPIO_GID) par install_docker.sh.
+      - "${GPIO_GID}"
+
+    volumes:
+      # Sonde DS18B20 : lecture seule, le conteneur n'a pas besoin d'y
+      # écrire.
+      - /sys/bus/w1/devices:/sys/bus/w1/devices:ro
+
+      # Clé USB de secours (services/storage/usb_storage). Propagation
+      # rslave : si la clé est démontée/remontée sur l'hôte après le
+      # démarrage du conteneur (hot-plug), le changement est répercuté
+      # dans le conteneur — avec une propagation par défaut (rprivate),
+      # Docker aurait gardé une vue figée du point de montage au
+      # moment du démarrage.
+      - type: bind
+        source: /mnt/usb_backup
+        target: /mnt/usb_backup
+        bind:
+          propagation: rslave
+
+      # Stockage local de repli (LOCAL_STORAGE_PATH) : simple dossier,
+      # pas un point de montage amovible, propagation par défaut ok.
+      - /opt/smart-heating/data:/opt/smart-heating/data

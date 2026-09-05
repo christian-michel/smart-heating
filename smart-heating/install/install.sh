@@ -117,6 +117,10 @@ DROPBOX_APP_KEY=
 DROPBOX_APP_SECRET=
 DROPBOX_REFRESH_TOKEN=
 API_TOKEN=changeme
+# Origines autorisées à appeler l'API depuis un navigateur, séparées par
+# des virgules. Laisser "*" pour un usage LAN uniquement ; restreindre si
+# l'API est exposée sur Internet.
+CORS_ALLOWED_ORIGINS=*
 EOF
     echo "Fichier .env créé"
 else

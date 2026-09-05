@@ -74,12 +74,18 @@ class AppController:
                 try:
                     if self.thermostat:
                         # 🔥 sync Controller → Thermostat (IMPORTANT)
-                        self.thermostat.target_temperature = self.state.get(
-                            "target_temperature", 19.0
-                        )
+                        # Lu et écrit sous verrou : évite une course avec
+                        # force_heating() / set_manual_mode() / set_target_temperature()
+                        # appelés depuis les threads API.
+                        with self.lock:
+                            self.thermostat.target_temperature = self.state.get(
+                                "target_temperature", 19.0
+                            )
 
                         self.thermostat.update()
-                        self._sync_state()
+
+                        with self.lock:
+                            self._sync_state()
 
                 except Exception as e:
                     print(f"[AppController] Erreur update : {e}")
@@ -176,8 +182,30 @@ class AppController:
             return True
 
     def force_heating(self, enabled: bool):
+        """
+        Force le chauffage ON/OFF depuis l'API.
+
+        Respecte la même protection anti-court-cycle que la régulation
+        automatique (thermostat.can_switch() / record_switch()) : sans
+        cela, un client API qui bascule ON/OFF rapidement pouvait
+        actionner le relais sans aucune limite, contrairement au mode
+        automatique.
+        """
         with self.lock:
             if not self.thermostat:
+                return False
+
+            # Déjà dans l'état demandé : rien à faire, pas de compteur
+            # anti-court-cycle à consommer inutilement.
+            if self.thermostat.heating.state == enabled:
+                self.state["heating"] = enabled
+                return True
+
+            if not self.thermostat.can_switch():
+                print(
+                    "[AppController] Chauffage forcé refusé "
+                    f"({enabled}) : protection anti-court-cycle active"
+                )
                 return False
 
             print(f"[AppController] Chauffage forcé → {enabled}")
@@ -188,6 +216,7 @@ class AppController:
                 else:
                     self.thermostat.heating.turn_off()
 
+                self.thermostat.record_switch()
                 self.state["heating"] = enabled
                 return True
 
